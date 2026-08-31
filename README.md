@@ -5,8 +5,10 @@
 
 > 도구는 **조회와 산출물 생성만** 한다. 실제 알람 생성은 사람이 CloudShell에서 실행한다.
 <img width="1182" height="655" alt="메인 화면" src="https://github.com/user-attachments/assets/519dc3e2-8761-4de9-a6b0-187c541222c1" />
-<img width="1481" height="779" alt="사진  1" src="https://github.com/user-attachments/assets/86d4a38e-5d49-4839-96f2-2420b59b54e9" />
-<img width="1906" height="390" alt="사진 2" src="https://github.com/user-attachments/assets/a36ecebe-448d-4731-816a-dfee373489a3" />
+<img width="1182" height="745" alt="구성화면1" src="https://github.com/user-attachments/assets/50e56133-9566-4dbd-885e-706df345c2a0" />
+<img width="1175" height="916" alt="구성화면2" src="https://github.com/user-attachments/assets/ec9de00b-b9b2-4f43-a92c-fd8e25823f2f" />
+<img width="1181" height="912" alt="구성화면3" src="https://github.com/user-attachments/assets/74ffe091-503f-49ca-968b-6718c3351a2e" />
+
 
 ## 주요 기능
 
