@@ -4,6 +4,9 @@
 반복적인 알람 설정을 표준화·자동화하고, 계정의 알람을 표준과 비교해 누락을 점검한다.
 
 > 도구는 **조회와 산출물 생성만** 한다. 실제 알람 생성은 사람이 CloudShell에서 실행한다.
+<img width="1182" height="655" alt="메인 화면" src="https://github.com/user-attachments/assets/519dc3e2-8761-4de9-a6b0-187c541222c1" />
+<img width="1481" height="779" alt="사진  1" src="https://github.com/user-attachments/assets/86d4a38e-5d49-4839-96f2-2420b59b54e9" />
+<img width="1906" height="390" alt="사진 2" src="https://github.com/user-attachments/assets/a36ecebe-448d-4731-816a-dfee373489a3" />
 
 ## 주요 기능
 
