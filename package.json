@@ -1,0 +1,32 @@
+{
+  "name": "cw-alarm-generator",
+  "version": "0.1.0",
+  "description": "CloudWatch 알람 생성 CLI 생성기",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "smoke": "rolldown scripts/smoke.ts --format esm --platform node -o .tmp/smoke.mjs --silent && node .tmp/smoke.mjs",
+    "validate": "rolldown scripts/smoke.ts --format esm --platform node -o .tmp/smoke.mjs --silent && node .tmp/smoke.mjs --json | python3 scripts/validate-params.py",
+    "docs": "rolldown scripts/gen-catalog-doc.ts --format esm --platform node -o .tmp/docs.mjs --silent && node .tmp/docs.mjs > catalog-metrics.md && echo catalog-metrics.md 생성됨",
+    "server": "node server/discover.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "private": "true",
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "typescript": "7.0.2",
+    "vite": "8.2.1"
+  }
+}
