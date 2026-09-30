@@ -24,12 +24,39 @@ export function validTagPairs(global: GlobalConfig): string[] {
     .map((t) => `Key=${t.key},Value=${t.value}`);
 }
 
-function renderAlarm(spec: AlarmSpec, global: GlobalConfig, index: number, total: number): string {
-  const dims = spec.dimensions
-    .filter((d) => d.value.length > 0)
-    .map((d) => `Name=${d.name},Value=${d.value}`)
-    .join(' ');
+/**
+ * 이상 탐지 알람의 --metrics 배열을 만든다.
+ * 정적 임계값과 달리 지표는 메트릭 수식(MetricStat + ANOMALY_DETECTION_BAND) 안으로 들어가고,
+ * 알람은 --threshold-metric-id 로 밴드를 참조한다.
+ */
+function anomalyMetricsJson(spec: AlarmSpec): string {
+  const id = spec.thresholdMetricId ?? 'ad1';
+  const metricStat: Record<string, unknown> = {
+    Metric: {
+      Namespace: spec.namespace,
+      MetricName: spec.metricName,
+      Dimensions: spec.dimensions
+        .filter((d) => d.value.length > 0)
+        .map((d) => ({ Name: d.name, Value: d.value })),
+    },
+    Period: spec.period,
+    Stat: spec.extendedStatistic ?? spec.statistic ?? 'Average',
+  };
+  if (spec.unit) metricStat.Unit = spec.unit;
+  const metrics = [
+    { Id: 'm1', MetricStat: metricStat, ReturnData: true },
+    {
+      Id: id,
+      Expression: `ANOMALY_DETECTION_BAND(m1, ${spec.bandWidth ?? 2})`,
+      Label: `${spec.metricName} (expected)`,
+      ReturnData: true,
+    },
+  ];
+  // 셸 작은따옴표로 감싼다. 값에 작은따옴표가 없다는 전제(리소스 ID/지표명엔 없음).
+  return `'${JSON.stringify(metrics)}'`;
+}
 
+function renderAlarm(spec: AlarmSpec, global: GlobalConfig, index: number, total: number): string {
   // 헤더 주석 (백슬래시 없음)
   const head = [`# [${index + 1}/${total}] ${spec.description}`];
   if (spec.thresholdUnit === 'gib') {
@@ -42,23 +69,42 @@ function renderAlarm(spec: AlarmSpec, global: GlobalConfig, index: number, total
     `--region "$REGION"`,
     `--alarm-name ${q(spec.alarmName)}`,
     `--alarm-description ${q(spec.description)}`,
-    `--namespace ${q(spec.namespace)}`,
-    `--metric-name ${q(spec.metricName)}`,
-    `--dimensions ${dims}`,
-    spec.extendedStatistic
-      ? `--extended-statistic ${spec.extendedStatistic}`
-      : `--statistic ${spec.statistic}`,
   ];
-  if (spec.unit) flags.push(`--unit ${spec.unit}`);
+
+  if (spec.anomaly) {
+    // 이상 탐지: 지표·통계·기간·디멘션은 --metrics 안으로, 임계값 대신 밴드 id.
+    flags.push(
+      `--metrics ${anomalyMetricsJson(spec)}`,
+      `--threshold-metric-id ${spec.thresholdMetricId ?? 'ad1'}`,
+    );
+  } else {
+    const dims = spec.dimensions
+      .filter((d) => d.value.length > 0)
+      .map((d) => `Name=${d.name},Value=${d.value}`)
+      .join(' ');
+    flags.push(`--namespace ${q(spec.namespace)}`, `--metric-name ${q(spec.metricName)}`);
+    // 디멘션이 없는(계정 전역) 알람은 --dimensions 를 아예 넣지 않는다.
+    if (dims) flags.push(`--dimensions ${dims}`);
+    flags.push(
+      spec.extendedStatistic
+        ? `--extended-statistic ${spec.extendedStatistic}`
+        : `--statistic ${spec.statistic}`,
+    );
+    if (spec.unit) flags.push(`--unit ${spec.unit}`);
+    flags.push(`--period ${spec.period}`);
+  }
+
   flags.push(
-    `--period ${spec.period}`,
     `--evaluation-periods ${spec.evaluationPeriods}`,
     `--datapoints-to-alarm ${spec.datapointsToAlarm}`,
-    `--threshold ${spec.threshold}`,
+  );
+  if (!spec.anomaly) flags.push(`--threshold ${spec.threshold}`);
+  flags.push(
     `--comparison-operator ${spec.comparisonOperator}`,
     `--treat-missing-data ${spec.treatMissingData}`,
-    `--alarm-actions "${snsVar(spec, global)}"`,
-    `--ok-actions "${snsVar(spec, global)}"`,
+    // 배열의 모든 토픽을 개별 인자로 펼친다("${SNS_TOPICS[@]}").
+    `--alarm-actions "\${SNS_TOPICS[@]}"`,
+    `--ok-actions "\${SNS_TOPICS[@]}"`,
   );
 
   const tags = validTagPairs(global);
@@ -66,11 +112,6 @@ function renderAlarm(spec: AlarmSpec, global: GlobalConfig, index: number, total
 
   const body = 'aws cloudwatch put-metric-alarm \\\n  ' + flags.join(' \\\n  ');
   return [...head, body].join('\n');
-}
-
-function snsVar(spec: AlarmSpec, global: GlobalConfig): string {
-  if (!global.splitSeverity) return '$SNS_TOPIC';
-  return spec.severity === 'critical' ? '$SNS_CRITICAL' : '$SNS_WARNING';
 }
 
 export function generateCli(global: GlobalConfig, specs: AlarmSpec[]): string {
@@ -91,38 +132,24 @@ export function generateCli(global: GlobalConfig, specs: AlarmSpec[]): string {
     '#',
     '# put-metric-alarm은 이름 기준 upsert입니다. 같은 이름의 알람이 이미',
     '# 있으면 경고 없이 덮어씁니다. 실행 전 describe-alarms로 확인하세요.',
+    '#',
+    '# 팁: 붙여넣으면 셸이 스크립트를 되비칩니다(정상). 결과만 깔끔히 보려면',
+    '#     파일로 저장 후  bash 파일이름.sh  로 실행하세요. (성공 시 출력은 아래 완료 메시지뿐)',
     '',
     'set -euo pipefail',
     '',
     `REGION=${q(global.region)}`,
   ];
 
-  if (global.splitSeverity) {
-    header.push(
-      `SNS_CRITICAL=${q(global.snsCritical.trim())}`,
-      `SNS_WARNING=${q(global.snsWarning.trim())}`,
-    );
-  } else {
-    header.push(`SNS_TOPIC=${q(global.snsCritical.trim())}`);
-  }
+  // 모든 알람이 공유하는 SNS 토픽 배열. put-metric-alarm에 "${SNS_TOPICS[@]}"로 펼친다.
+  const topics = (global.snsTopics ?? []).map((t) => t.trim()).filter(Boolean);
+  const uniqueTopics = [...new Set(topics)];
+  header.push(`SNS_TOPICS=(${uniqueTopics.map((t) => q(t)).join(' ')})`);
 
   // 알람 블록 사이에 빈 줄을 넣어 붙여넣었을 때 읽기 쉽게 한다.
   const body = specs.flatMap((s, i) => [renderAlarm(s, global, i, specs.length), '']);
 
-  const footer = [
-    '',
-    `echo "완료: 알람 ${specs.length}건 생성/갱신"`,
-    '',
-    '# 결과 확인',
-    '# aws cloudwatch describe-alarms --region "$REGION" \\',
-    `#   --alarm-name-prefix ${q(global.prefix || '')} \\`,
-    "#   --query 'MetricAlarms[].[AlarmName,StateValue,Threshold]' --output table",
-    '',
-    '# 지표·디멘션 오타 색출 (INSUFFICIENT_DATA에 머무는 알람)',
-    '# aws cloudwatch describe-alarms --region "$REGION" \\',
-    `#   --alarm-name-prefix ${q(global.prefix || '')} --state-value INSUFFICIENT_DATA \\`,
-    "#   --query 'MetricAlarms[].AlarmName' --output table",
-  ];
+  const footer = ['', `echo "완료: 알람 ${specs.length}건 생성/갱신"`];
 
   return [...header, '', ...body, ...footer].join('\n') + '\n';
 }

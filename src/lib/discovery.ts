@@ -20,13 +20,18 @@ function mapRdsEngine(engine: string): { typeKey: string | null; reason?: string
   switch (engine) {
     case 'aurora-postgresql':
       return { typeKey: 'aurora-pg' };
+    case 'aurora-mysql':
+      return { typeKey: 'aurora-mysql' };
     case 'postgres':
       return { typeKey: 'rds-pg' };
     case 'mysql':
-    case 'mariadb':
       return { typeKey: 'rds-mysql' };
+    case 'mariadb':
+      return { typeKey: 'rds-mariadb' };
     default:
-      // aurora-mysql, oracle, sqlserver 등은 아직 카탈로그가 없다.
+      // oracle-ee, oracle-se2 등 오라클 계열은 공통 RDS 지표로 매핑.
+      if (engine.startsWith('oracle')) return { typeKey: 'rds-oracle' };
+      // sqlserver 등은 아직 카탈로그가 없다.
       return { typeKey: null, reason: `카탈로그 없음(${engine})` };
   }
 }

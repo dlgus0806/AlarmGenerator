@@ -6,37 +6,43 @@ import { generateCli } from './lib/generateCli';
 import { countByLevel, validate } from './lib/validate';
 import { parseProjectFile } from './lib/io';
 import { useTheme } from './lib/theme';
+import { useAuth } from './lib/useAuth';
 import { applyTemplate, defaultSelection } from './lib/templates';
 import { GlobalPanel } from './components/GlobalPanel';
 import { TemplatePanel } from './components/TemplatePanel';
-import { IntakePanel } from './components/IntakePanel';
-import { DiscoveryPanel } from './components/DiscoveryPanel';
-import type { IntakeApply } from './lib/intake';
+import { AiPanel } from './components/AiPanel';
+import { intakeNotices, type IntakeApply } from './lib/intake';
 import { ResourceCard } from './components/ResourceCard';
 import { FindingsPanel } from './components/FindingsPanel';
 import { OutputPanel } from './components/OutputPanel';
-import { AuditPanel } from './components/AuditPanel';
+import { HelpWidget } from './components/HelpWidget';
 
 /** 헤더 설명 문구. 여기만 고치면 됩니다. */
 const HEADER_SUBTITLE =
-  '토글로 고르면 CLI가 만들어집니다. AWS API는 호출하지 않습니다 — 실행은 CloudShell에서 직접 하세요.';
+  '토글이나 AI로 CloudWatch 알람 CLI를 만들고, 실행은 CloudShell에서 직접 합니다.';
 
 const DEFAULT_GLOBAL: GlobalConfig = {
   prefix: '',
   region: 'ap-northeast-2',
-  snsCritical: '',
-  snsWarning: '',
-  splitSeverity: false,
+  snsTopics: [],
   namingMode: 'auto',
   tags: [],
 };
 
 export default function App() {
   const { theme, toggle } = useTheme();
+  const auth = useAuth();
   const [global, setGlobal] = useState<GlobalConfig>(DEFAULT_GLOBAL);
   const [resources, setResources] = useState<ResourceEntry[]>([]);
-  const [workloadNote, setWorkloadNote] = useState('');
   const [importError, setImportError] = useState('');
+  // AI 어시스턴트에서 역할 ARN을 검증하면 여기 올라온다. 점검(OutputPanel)이 공유해 쓴다.
+  const [validatedRole, setValidatedRole] = useState<{ accountId: string; account: string } | null>(
+    null,
+  );
+  // 적용(AI/템플릿/리소스 카드 생성)이 일어날 때 증가 → 우측 패널이 점검 탭으로 전환.
+  const [applyNonce, setApplyNonce] = useState(0);
+  // 알람 구성 방식(상단 가로 탭): AI 어시스턴트 / 표준 템플릿 / 리소스 선택.
+  const [method, setMethod] = useState<'ai' | 'template' | 'manual'>('ai');
 
   const specs = useMemo(() => buildAlarms(global, resources), [global, resources]);
   const findings = useMemo(
@@ -49,14 +55,15 @@ export default function App() {
   function addResource(typeKey: string) {
     const type = getResourceType(typeKey);
     if (!type) return;
+    // 새 리소스는 맨 위에 추가해 바로 보이게 한다.
     setResources((prev) => [
-      ...prev,
       {
         uid: crypto.randomUUID(),
         typeKey,
         resourceId: '',
         selected: defaultSelection(type),
       },
+      ...prev,
     ]);
   }
 
@@ -68,6 +75,12 @@ export default function App() {
 
   function removeResource(uid: string) {
     setResources((prev) => prev.filter((r) => r.uid !== uid));
+  }
+
+  function clearAllResources() {
+    if (resources.length === 0) return;
+    if (!window.confirm(`리소스 카드 ${resources.length}개를 모두 삭제할까요?`)) return;
+    setResources([]);
   }
 
   function duplicateResource(uid: string) {
@@ -99,22 +112,44 @@ export default function App() {
       });
   }
 
-  function handleIntake(result: IntakeApply) {
+  // 리소스가 새로 채워진 뒤, 확인할 수 있도록 카드 목록으로 스크롤 이동한다.
+  function scrollToResources() {
+    setTimeout(
+      () =>
+        document
+          .getElementById('resource-list')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      80,
+    );
+  }
+
+  // 적용했으면 true, 취소/미적용이면 false. (호출부가 성공 시에만 스크롤·피드백하도록)
+  function handleIntake(result: IntakeApply): boolean {
+    const notes = intakeNotices(result);
+
+    // 적용할 리소스가 하나도 없으면(리소스 ID 미확정 등) 상태를 바꾸지 않고 경고만 띄운다.
+    // → "적용 되었습니다" 없이 무엇이 빠졌는지만 안내.
+    if (result.resources.length === 0) {
+      if (notes.length > 0) {
+        window.alert(notes.map((n) => `⚠ ${n}`).join('\n'));
+      }
+      return false;
+    }
+
     if (
       resources.length > 0 &&
       !window.confirm(`요구사항을 적용하면 현재 리소스 ${resources.length}개가 교체됩니다. 계속할까요?`)
     ) {
-      return;
+      return false;
     }
     setGlobal((g) => ({ ...g, ...result.global }));
     setResources(result.resources);
-    const notes = [
-      ...result.unresolved.map((u) => `미확정 ${u.field}: ${u.reason}`),
-      ...result.warnings,
-    ];
+    setApplyNonce((n) => n + 1);
+    scrollToResources();
     if (notes.length > 0) {
-      window.alert('적용됨. 확인 필요:\n\n' + notes.join('\n'));
+      window.alert('적용 되었습니다.\n\n' + notes.map((n) => `⚠ ${n}`).join('\n'));
     }
+    return true;
   }
 
   function handleApplyTemplate(t: AlarmTemplate, choices: Record<number, string>) {
@@ -128,10 +163,33 @@ export default function App() {
       return;
     }
     setResources(applyTemplate(t, choices));
+    setApplyNonce((n) => n + 1);
+    scrollToResources();
   }
+
+  // 사내 전용: 미로그인 시 앱을 뒤에 흐리게 깔고 그 위에 로그인 모달을 띄운다.
+  // (auth.configured=false = OAuth 미구성 로컬 dev → 모달 없이 통과)
+  const showLoginOverlay = auth.loading || (auth.configured && !auth.authenticated);
 
   return (
     <div className="app">
+      {showLoginOverlay && (
+        <div className="login-overlay">
+          <div className="login-gate">
+            {auth.loading ? (
+              <p>로딩 중…</p>
+            ) : (
+              <>
+                <h1>CloudWatch Alarm Generator</h1>
+                <p>Slack 로그인 후 이용 가능합니다.</p>
+                <button className="btn btn-primary btn-slack" onClick={auth.login}>
+                  Slack 로그인
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <header className="app-header">
         <div className="header-title">
           <h1>CloudWatch Alarm Generator</h1>
@@ -147,6 +205,22 @@ export default function App() {
           <span className={`stat ${counts.warning > 0 ? 'stat-warn' : ''}`}>
             경고 <strong>{counts.warning}</strong>
           </span>
+          {auth.configured &&
+            (auth.authenticated ? (
+              <span className="user-chip">
+                <span className="user-chip-name" title={auth.identity?.email}>
+                  {auth.identity?.name || auth.identity?.email || '로그인됨'}
+                </span>
+                <span className="user-chip-sep" aria-hidden="true">|</span>
+                <button className="user-chip-logout" onClick={() => void auth.logout()}>
+                  로그아웃
+                </button>
+              </span>
+            ) : (
+              <button className="theme-btn btn-slack" onClick={auth.login}>
+                Slack 로그인
+              </button>
+            ))}
           <button
             className="theme-btn"
             onClick={toggle}
@@ -159,6 +233,14 @@ export default function App() {
 
       <div className="layout">
         <div className="col-left">
+          <div className="col-header">
+            <span className="col-step">1</span>
+            <div>
+              <h2 className="col-title">알람 구성</h2>
+              <p className="col-sub">리소스와 지표를 골라 알람을 정의합니다 (AI·템플릿·수동)</p>
+            </div>
+          </div>
+
           <GlobalPanel
             value={global}
             onChange={setGlobal}
@@ -166,56 +248,112 @@ export default function App() {
             importError={importError}
           />
 
-          <IntakePanel onApply={handleIntake} />
+          {/* 알람 구성 방식 선택: 가로 3분할 탭. 선택한 방식의 패널만 보여준다. */}
+          <div className="method-tabs" role="tablist">
+            <button
+              role="tab"
+              aria-selected={method === 'ai'}
+              className={`method-tab ${method === 'ai' ? 'active' : ''}`}
+              onClick={() => setMethod('ai')}
+            >
+              <span className="method-tab-title">AI 어시스턴트</span>
+              <span className="method-tab-sub">자연어로 입력하면 AI가 생성</span>
+            </button>
+            <button
+              role="tab"
+              aria-selected={method === 'template'}
+              className={`method-tab ${method === 'template' ? 'active' : ''}`}
+              onClick={() => setMethod('template')}
+            >
+              <span className="method-tab-title">표준 템플릿</span>
+              <span className="method-tab-sub">자주 쓰는 알람 묶음을 저장·재사용 </span>
+            </button>
+            <button
+              role="tab"
+              aria-selected={method === 'manual'}
+              className={`method-tab ${method === 'manual' ? 'active' : ''}`}
+              onClick={() => setMethod('manual')}
+            >
+              <span className="method-tab-title">리소스 선택</span>
+              <span className="method-tab-sub">직접 리소스 추가</span>
+            </button>
+          </div>
 
-          <TemplatePanel resources={resources} onApply={handleApplyTemplate} />
+          {method === 'ai' && (
+            <AiPanel
+              global={global}
+              onApply={handleIntake}
+              onValidatedRole={setValidatedRole}
+              authenticated={auth.authenticated}
+              authRequired={auth.configured}
+              onLogin={auth.login}
+              onAdd={(entries) => {
+                // 이미 있는 (타입+리소스ID) 조합은 건너뛰고, 새 카드는 맨 위에 추가
+                setResources((prev) => {
+                  const seen = new Set(prev.map((r) => `${r.typeKey}|${r.resourceId}`));
+                  const fresh = entries.filter((e) => !seen.has(`${e.typeKey}|${e.resourceId}`));
+                  return [...fresh, ...prev];
+                });
+                setApplyNonce((n) => n + 1);
+                scrollToResources();
+              }}
+            />
+          )}
 
-          <DiscoveryPanel
-            global={global}
-            onAdd={(entries) => {
-              // 이미 있는 (타입+리소스ID) 조합은 건너뛰고 추가
-              setResources((prev) => {
-                const seen = new Set(prev.map((r) => `${r.typeKey}|${r.resourceId}`));
-                const fresh = entries.filter((e) => !seen.has(`${e.typeKey}|${e.resourceId}`));
-                return [...prev, ...fresh];
-              });
-            }}
-          />
+          {method === 'template' && (
+            <TemplatePanel resources={resources} onApply={handleApplyTemplate} />
+          )}
 
-          <section className="panel">
-            <h2>리소스 추가</h2>
-            <div className="type-buttons">
-              {CATALOG.map((t) => (
-                <button key={t.key} className="btn" onClick={() => addResource(t.key)}>
-                  + {t.label}
-                </button>
-              ))}
-            </div>
-            <p className="hint">
-              Aurora와 RDS PostgreSQL은 사용 가능한 지표가 다릅니다. Aurora에는{' '}
-              <code>FreeStorageSpace</code>가 없고 <code>FreeLocalStorage</code>를 씁니다.
-            </p>
-          </section>
+          {method === 'manual' && (
+            <section className="panel">
+              <h2>리소스 선택</h2>
+              <div className="type-buttons">
+                {CATALOG.map((t) => (
+                  <button key={t.key} className="btn" onClick={() => addResource(t.key)}>
+                    + {t.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           {resources.length === 0 ? (
-            <section className="panel empty">
-              리소스를 추가하면 지표 토글이 나타납니다.
+            <section className="panel empty" id="resource-list">
+              위에서 방식을 골라 적용하면 리소스 카드가 여기에 나타납니다.
             </section>
           ) : (
-            resources.map((entry) => (
-              <ResourceCard
-                key={entry.uid}
-                entry={entry}
-                global={global}
-                onChange={(patch) => updateResource(entry.uid, patch)}
-                onRemove={() => removeResource(entry.uid)}
-                onDuplicate={() => duplicateResource(entry.uid)}
-              />
-            ))
+            <div id="resource-list" className="resource-cards">
+              <div className="row-between" style={{ margin: '2px' }}>
+                <span className="hint" style={{ margin: 0 }}>
+                  리소스 카드 {resources.length}개
+                </span>
+                <button className="btn btn-danger-ghost" onClick={clearAllResources}>
+                  전체 삭제
+                </button>
+              </div>
+              {resources.map((entry) => (
+                <ResourceCard
+                  key={entry.uid}
+                  entry={entry}
+                  global={global}
+                  onChange={(patch) => updateResource(entry.uid, patch)}
+                  onRemove={() => removeResource(entry.uid)}
+                  onDuplicate={() => duplicateResource(entry.uid)}
+                />
+              ))}
+            </div>
           )}
         </div>
 
         <div className="col-right">
+          <div className="col-header">
+            <span className="col-step">2</span>
+            <div>
+              <h2 className="col-title">검증 &amp; 산출물</h2>
+              <p className="col-sub">정의를 점검하고, 실행용 점검 스크립트·CLI·JSON을 받습니다</p>
+            </div>
+          </div>
+
           <FindingsPanel findings={findings} />
           <OutputPanel
             global={global}
@@ -223,12 +361,15 @@ export default function App() {
             specs={specs}
             findings={findings}
             script={script}
-            workloadNote={workloadNote}
-            onWorkloadNoteChange={setWorkloadNote}
+            validatedRole={validatedRole}
+            applyNonce={applyNonce}
+            authenticated={auth.authenticated}
+            authRequired={auth.configured}
           />
-          <AuditPanel global={global} specs={specs} />
         </div>
       </div>
+
+      <HelpWidget />
     </div>
   );
 }

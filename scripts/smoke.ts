@@ -12,9 +12,10 @@ import { validate } from '../src/lib/validate';
 const global: GlobalConfig = {
   prefix: 'prd-was',
   region: 'ap-northeast-2',
-  snsCritical: 'arn:aws:sns:ap-northeast-2:111122223333:ops-page',
-  snsWarning: 'arn:aws:sns:ap-northeast-2:111122223333:ops-slack',
-  splitSeverity: true,
+  snsTopics: [
+    'arn:aws:sns:ap-northeast-2:111122223333:ops-page',
+    'arn:aws:sns:ap-northeast-2:111122223333:ops-slack',
+  ],
   namingMode: 'auto',
   tags: [
     { key: 'Owner', value: 'platform-team' },
@@ -54,6 +55,16 @@ if (mem) {
 // 지표 복제 커버리지: mem-high 하나 더 (다른 임계값)
 if (mem) {
   ec2.selected.push({ ...structuredClone(mem), uid: 'ec2-mem-high-2', threshold: 95 });
+}
+// 이상 탐지 커버리지: mem-high 를 이상 탐지 알람으로 하나 더
+if (mem) {
+  ec2.selected.push({
+    ...structuredClone(mem),
+    uid: 'ec2-mem-anom',
+    anomaly: true,
+    bandWidth: 2,
+    comparisonOperator: 'LessThanLowerOrGreaterThanUpperThreshold',
+  });
 }
 // 커스텀 지표 커버리지
 ec2.customMetrics = [

@@ -1,4 +1,15 @@
 {
+  "_comment": "복사해서 server/account.local.json 으로 저장(gitignore됨). 환경변수로도 설정 가능.",
+
+  "roleNames": ["monitoring-readonly"],
+  "_roleNames": "assume 허용 역할 이름 화이트리스트. 붙여넣은 ARN의 역할 이름이 이 중 하나여야 assume 한다. (env: ALLOWED_ROLE_NAMES=a,b)",
+
   "accounts": ["123456789012"],
-  "roleName": "monitoring-readonly"
+  "_accounts": "레거시 account 파라미터 조회용 허용 계정. (env: ALLOWED_ACCOUNTS=123...,456...)",
+
+  "allowedOrigin": "*",
+  "_allowedOrigin": "CORS 허용 오리진. 공개 배포 시 프론트 오리진으로 좁힐 것. 예: https://d123.cloudfront.net (env: ALLOWED_ORIGIN)",
+
+  "apiToken": "",
+  "_apiToken": "설정하면 x-api-token 헤더가 일치해야 응답. 공개 배포 시 반드시 설정. 비우면 인증 없음(로컬 전용). (env: DISCOVER_API_TOKEN)"
 }

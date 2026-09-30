@@ -42,7 +42,14 @@ export function toTemplate(name: string, resources: ResourceEntry[]): AlarmTempl
 }
 
 /** RDS 엔진 선택 슬롯의 후보 (Aurora PostgreSQL / RDS PostgreSQL / RDS MySQL·MariaDB) */
-export const RDS_ENGINE_CHOICES = ['aurora-pg', 'rds-pg', 'rds-mysql'];
+export const RDS_ENGINE_CHOICES = [
+  'aurora-pg',
+  'aurora-mysql',
+  'rds-pg',
+  'rds-mysql',
+  'rds-mariadb',
+  'rds-oracle',
+];
 
 /** choose 슬롯이 하나라도 있는지 */
 export function hasChoices(t: AlarmTemplate): boolean {
@@ -100,12 +107,12 @@ export function builtinTemplates(): AlarmTemplate[] {
   return [
     {
       ...base,
-      name: '웹 워크로드 알람 (EC2 + ALB + RDS)',
+      name: 'EC2 + ALB + RDS 알람',
       resources: [typeSlot('ec2'), typeSlot('alb'), chooseSlot(RDS_ENGINE_CHOICES)],
     },
     {
       ...base,
-      name: 'RDS 알람',
+      name: 'RDS 알람 ',
       resources: [chooseSlot(RDS_ENGINE_CHOICES)],
     },
     {

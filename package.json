@@ -11,7 +11,8 @@
     "smoke": "rolldown scripts/smoke.ts --format esm --platform node -o .tmp/smoke.mjs --silent && node .tmp/smoke.mjs",
     "validate": "rolldown scripts/smoke.ts --format esm --platform node -o .tmp/smoke.mjs --silent && node .tmp/smoke.mjs --json | python3 scripts/validate-params.py",
     "docs": "rolldown scripts/gen-catalog-doc.ts --format esm --platform node -o .tmp/docs.mjs --silent && node .tmp/docs.mjs > catalog-metrics.md && echo catalog-metrics.md 생성됨",
-    "server": "node server/discover.mjs"
+    "server": "node server/discover.mjs",
+    "deploy:web": "deploy/deploy-frontend.sh cw-alarm-generator ES74LLKMAC9D9"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,14 @@
   "type": "module",
   "private": "true",
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "@aws-sdk/client-cloudwatch": "^3.700.0",
+    "@aws-sdk/client-ec2": "^3.700.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.700.0",
+    "@aws-sdk/client-iam": "^3.1143.0",
+    "@aws-sdk/client-rds": "^3.700.0",
+    "@aws-sdk/client-sns": "3.1143.0",
+    "@aws-sdk/client-sts": "^3.700.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

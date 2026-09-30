@@ -1,6 +1,7 @@
 {
   "key": "ec2",
   "label": "EC2 인스턴스",
+  "shortLabel": "EC2",
   "shortCode": "ec2",
   "dimensionName": "InstanceId",
   "idPlaceholder": "i-0abc123def456789",
@@ -15,8 +16,8 @@
       "statistic": "Average",
       "unit": "Percent",
       "period": 300,
-      "evaluationPeriods": 3,
-      "datapointsToAlarm": 2,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
       "comparisonOperator": "GreaterThanOrEqualToThreshold",
       "threshold": 80,
       "thresholdUnit": "percent",
@@ -28,7 +29,8 @@
         { "level": "Lv1", "threshold": 70, "severity": "warning" },
         { "level": "Lv2", "threshold": 80, "severity": "warning" },
         { "level": "Lv3", "threshold": 90, "severity": "critical" }
-      ]
+      ],
+      "note": "Amazon EC2에서 EC2 인스턴스 실행에 사용하는 물리적 CPU 시간의 비율입니다."
     },
     {
       "key": "status-check-instance",
@@ -39,8 +41,8 @@
       "statistic": "Maximum",
       "unit": "Count",
       "period": 60,
-      "evaluationPeriods": 2,
-      "datapointsToAlarm": 2,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
       "comparisonOperator": "GreaterThanOrEqualToThreshold",
       "threshold": 1,
       "thresholdUnit": "count",
@@ -48,7 +50,7 @@
       "severity": "critical",
       "defaultOn": false,
       "badges": ["기본"],
-      "note": "OS 레벨 문제. 재부팅으로 복구되는 경우가 많다. (결측=missing: 지표가 끊기면 상태 유지)"
+      "note": "인스턴스가 마지막으로 인스턴스 상태 확인을 통과했는지 여부를 보고합니다."
     },
     {
       "key": "status-check-system",
@@ -59,8 +61,8 @@
       "statistic": "Maximum",
       "unit": "Count",
       "period": 60,
-      "evaluationPeriods": 2,
-      "datapointsToAlarm": 2,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
       "comparisonOperator": "GreaterThanOrEqualToThreshold",
       "threshold": 1,
       "thresholdUnit": "count",
@@ -68,7 +70,7 @@
       "severity": "critical",
       "defaultOn": false,
       "badges": ["기본"],
-      "note": "AWS 인프라 문제. 인스턴스 중지/시작으로 다른 호스트로 이동해야 복구된다. (결측=missing)"
+      "note": "인스턴스가 마지막으로 모든 상태 확인을 통과했는지 여부를 보고합니다."
     },
     {
       "key": "cpu-credit-low",
@@ -79,8 +81,8 @@
       "statistic": "Minimum",
       "unit": "Count",
       "period": 300,
-      "evaluationPeriods": 3,
-      "datapointsToAlarm": 3,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
       "comparisonOperator": "LessThanOrEqualToThreshold",
       "threshold": 20,
       "thresholdUnit": "count",
@@ -88,7 +90,7 @@
       "severity": "warning",
       "defaultOn": false,
       "badges": ["T 계열 전용"],
-      "note": "T2/T3/T4g 인스턴스에만 존재한다. 다른 계열에 걸면 영구 INSUFFICIENT_DATA."
+      "note": "T2/T3/T4g 인스턴스에만 존재합니다. 시작 이후 인스턴스가 누적한 획득 CPU 크레딧 수입니다."
     },
     {
       "key": "ebs-io-balance-low",
@@ -99,8 +101,8 @@
       "statistic": "Minimum",
       "unit": "Percent",
       "period": 300,
-      "evaluationPeriods": 3,
-      "datapointsToAlarm": 3,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
       "comparisonOperator": "LessThanOrEqualToThreshold",
       "threshold": 20,
       "thresholdUnit": "percent",
@@ -108,7 +110,7 @@
       "severity": "warning",
       "defaultOn": false,
       "badges": ["Nitro 전용"],
-      "note": "Nitro 기반 인스턴스 + 버스트 볼륨에서만 나온다."
+      "note": "버스트 버킷에 남아 있는 I/O 크레딧의 비율에 대한 정보를 제공합니다."
     },
     {
       "key": "mem-high",
@@ -118,16 +120,21 @@
       "statistic": "Average",
       "unit": "Percent",
       "period": 300,
-      "evaluationPeriods": 3,
-      "datapointsToAlarm": 2,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
       "comparisonOperator": "GreaterThanOrEqualToThreshold",
       "threshold": 85,
       "thresholdUnit": "percent",
       "treatMissingData": "missing",
       "severity": "warning",
       "defaultOn": true,
-      "badges": ["에이전트 필요"],
-      "note": "CloudWatch Agent 설치 필요. 에이전트 설정에 따라 디멘션 구성이 달라질 수 있으니 list-metrics로 확인하세요."
+      "badges": ["에이전트 필요", "Lv1/2/3"],
+      "levels": [
+        { "level": "Lv1", "threshold": 70, "severity": "warning" },
+        { "level": "Lv2", "threshold": 80, "severity": "warning" },
+        { "level": "Lv3", "threshold": 90, "severity": "critical" }
+      ],
+      "note": "현재 사용 중인 메모리 비율입니다. 지표 확인을 위해서는 CloudWatch Agent 설치가 필요합니다."
     },
     {
       "key": "disk-high",
@@ -137,18 +144,23 @@
       "statistic": "Average",
       "unit": "Percent",
       "period": 300,
-      "evaluationPeriods": 3,
-      "datapointsToAlarm": 3,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
       "comparisonOperator": "GreaterThanOrEqualToThreshold",
       "threshold": 85,
       "thresholdUnit": "percent",
       "treatMissingData": "missing",
       "severity": "warning",
       "defaultOn": true,
-      "badges": ["에이전트 필요"],
-      "note": "에이전트 설정에 따라 device / fstype 디멘션이 추가로 필요할 수 있습니다. list-metrics로 실제 디멘션을 확인하세요.",
+      "badges": ["에이전트 필요", "Lv1/2/3"],
+      "levels": [
+        { "level": "Lv1", "threshold": 80, "severity": "warning" },
+        { "level": "Lv2", "threshold": 85, "severity": "warning" },
+        { "level": "Lv3", "threshold": 90, "severity": "critical" }
+      ],
+      "note": "사용된 총 디스크 공간 비율입니다. 에이전트 설정에 따라 device / fstype 디멘션이 추가로 필요할 수 있습니다.",
       "extraDimensions": [
-        { "name": "path", "label": "마운트 경로", "placeholder": "/" }
+        { "name": "path", "label": "마운트 경로", "placeholder": "/", "default": "/", "required": false }
       ]
     }
   ]

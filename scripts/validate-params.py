@@ -37,8 +37,8 @@ def to_params(s: dict) -> dict:
         "Threshold": s["threshold"],
         "ComparisonOperator": s["comparisonOperator"],
         "TreatMissingData": s["treatMissingData"],
-        "AlarmActions": [s["snsTopicArn"]],
-        "OKActions": [s["snsTopicArn"]],
+        "AlarmActions": list(s.get("snsTopicArns", [])),
+        "OKActions": list(s.get("snsTopicArns", [])),
     }
     if global_tags:
         p["Tags"] = [{"Key": t["key"], "Value": t["value"]} for t in global_tags]
@@ -48,6 +48,50 @@ def to_params(s: dict) -> dict:
         p["ExtendedStatistic"] = s["extendedStatistic"]
     if s.get("unit"):
         p["Unit"] = s["unit"]
+    return p
+
+
+def to_anomaly_params(s: dict) -> dict:
+    """이상 탐지 알람: 지표는 --metrics 안으로, 임계값 대신 --threshold-metric-id."""
+    tid = s.get("thresholdMetricId") or "ad1"
+    band = s.get("bandWidth", 2)
+    metric_stat = {
+        "Metric": {
+            "Namespace": s["namespace"],
+            "MetricName": s["metricName"],
+            "Dimensions": [
+                {"Name": d["name"], "Value": d["value"]}
+                for d in s["dimensions"]
+                if d["value"]
+            ],
+        },
+        "Period": s["period"],
+        "Stat": s.get("statistic") or s.get("extendedStatistic") or "Average",
+    }
+    if s.get("unit"):
+        metric_stat["Unit"] = s["unit"]
+    p = {
+        "AlarmName": s["alarmName"],
+        "AlarmDescription": s["description"],
+        "EvaluationPeriods": s["evaluationPeriods"],
+        "DatapointsToAlarm": s["datapointsToAlarm"],
+        "ComparisonOperator": s["comparisonOperator"],
+        "TreatMissingData": s["treatMissingData"],
+        "AlarmActions": list(s.get("snsTopicArns", [])),
+        "OKActions": list(s.get("snsTopicArns", [])),
+        "ThresholdMetricId": tid,
+        "Metrics": [
+            {"Id": "m1", "MetricStat": metric_stat, "ReturnData": True},
+            {
+                "Id": tid,
+                "Expression": f"ANOMALY_DETECTION_BAND(m1, {band})",
+                "Label": f"{s['metricName']} (expected)",
+                "ReturnData": True,
+            },
+        ],
+    }
+    if global_tags:
+        p["Tags"] = [{"Key": t["key"], "Value": t["value"]} for t in global_tags]
     return p
 
 
@@ -75,7 +119,7 @@ def main() -> int:
 
     fails = 0
     for s in specs:
-        p = to_params(s)
+        p = to_anomaly_params(s) if s.get("anomaly") else to_params(s)
         problems = []
 
         report = validator.validate(p, shape)
@@ -90,7 +134,7 @@ def main() -> int:
             if key in p and p[key] not in allowed:
                 problems.append(f"enum 위반: {key}={p[key]!r}")
 
-        for tag in p["Tags"]:
+        for tag in p.get("Tags", []):
             bad = sorted(set(tag["Value"]) - TAG_VALUE_ALLOWED)
             if bad:
                 problems.append(f"태그 {tag['Key']} 값에 허용되지 않는 문자: {bad}")

@@ -30,9 +30,15 @@ export function slugify(input: string): string {
 export function shortenResourceId(id: string): string {
   const trimmed = id.trim();
   if (!trimmed) return '';
-  const parts = trimmed.split('/');
-  const base = parts.length >= 2 ? parts[1] : parts[0];
-  return base.replace(/[^A-Za-z0-9]/g, '').toLowerCase().slice(0, 12);
+  // ALB 등 app/<name>/<hash> 형태(슬래시 포함)는 가운데 이름 부분만 짧게 쓴다.
+  if (trimmed.includes('/')) {
+    const parts = trimmed.split('/');
+    const base = parts.length >= 2 ? parts[1] : parts[0];
+    return base.replace(/[^A-Za-z0-9]/g, '').toLowerCase().slice(0, 12);
+  }
+  // 그 외(EC2 인스턴스 ID, RDS 식별자 등)는 전체 ID를 그대로 쓴다(허용 문자만 유지).
+  // 예) i-030e7c3d36c937197 → 그대로. 축약하면 지표/알람 대조 시 혼동이 생긴다.
+  return trimmed.replace(/[^A-Za-z0-9._:-]/g, '');
 }
 
 /**

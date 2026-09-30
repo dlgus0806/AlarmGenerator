@@ -8,3 +8,9 @@ dist/
 account.local.json
 .DS_Store
 .tmp/
+cw-broker.zip
+
+# 사내 인프라 식별자(내부 계정 ARN, ExternalId, SSM 경로)가 담긴 파일. 로컬에만 두고 커밋하지 않는다.
+ADMIN.md
+crossaccount-credential-broker-*/
+cw-broker/

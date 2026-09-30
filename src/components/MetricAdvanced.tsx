@@ -1,13 +1,5 @@
 import type { MetricPreset, MetricSelection, Severity } from '../types';
-import {
-  MISSING_DATA_OPTIONS,
-  OPERATOR_OPTIONS,
-  PERIOD_OPTIONS,
-  SEVERITY_OPTIONS,
-  STATISTIC_OPTIONS,
-  hasOverrides,
-  resolveMetric,
-} from '../lib/build';
+import { MISSING_DATA_OPTIONS, SEVERITY_OPTIONS, hasOverrides, resolveMetric } from '../lib/build';
 
 interface Props {
   preset: MetricPreset;
@@ -24,7 +16,11 @@ function fmt(seconds: number): string {
   return `${seconds / 60}분`;
 }
 
-/** 지표별 세부 설정. 기본값은 카탈로그에서 오고, 여기서 개별 override 한다. */
+/**
+ * 콘솔의 "추가 구성"에 해당하는 접이식 영역.
+ * 네임스페이스·지표·통계·기간·연산자·임계값은 상위의 지표/조건 그룹에서 다루고,
+ * 여기서는 평가 기간·데이터포인트·결측 데이터·심각도만 조정한다.
+ */
 export function MetricAdvanced({ preset, selection, hideSeverity, onPatch, onReset }: Props) {
   const r = resolveMetric(preset, selection);
   const changed = hasOverrides(preset, selection);
@@ -34,80 +30,44 @@ export function MetricAdvanced({ preset, selection, hideSeverity, onPatch, onRes
   return (
     <details className="advanced">
       <summary>
-        세부 설정
-        {changed && <span className="override-dot" title="기본값에서 변경됨" />}
-        <span style={{ marginLeft: 'auto' }}>
-          {fmt(r.period)} · {r.datapointsToAlarm}/{r.evaluationPeriods} · {r.treatMissingData}
+        추가 구성
+        {changed && (
+          <span className="override-badge" title="카탈로그 기본값과 다릅니다. 아래 버튼으로 되돌릴 수 있습니다.">
+            변경됨
+          </span>
+        )}
+        <span className="mc-cond-summary">
+          {r.datapointsToAlarm}/{r.evaluationPeriods} · {r.treatMissingData}
         </span>
       </summary>
 
       <div className="advanced-grid">
         <label className="field">
-          <span>기간 (period)</span>
-          <select
-            value={r.period}
-            onChange={(e) => onPatch({ period: Number(e.target.value) })}
-          >
-            {PERIOD_OPTIONS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field">
-          <span>평가 횟수 (N)</span>
+          <span>평가 기간 (N)</span>
           <input
             type="number"
             min={1}
             max={100}
+            step={1}
             value={r.evaluationPeriods}
-            onChange={(e) => onPatch({ evaluationPeriods: Number(e.target.value) })}
+            onChange={(e) =>
+              onPatch({ evaluationPeriods: Math.max(1, Math.round(Number(e.target.value) || 1)) })
+            }
           />
         </label>
 
         <label className="field">
-          <span>알람 데이터포인트 (M)</span>
+          <span>경보 데이터포인트 (M)</span>
           <input
             type="number"
             min={1}
             max={r.evaluationPeriods}
+            step={1}
             value={r.datapointsToAlarm}
-            onChange={(e) => onPatch({ datapointsToAlarm: Number(e.target.value) })}
+            onChange={(e) =>
+              onPatch({ datapointsToAlarm: Math.max(1, Math.round(Number(e.target.value) || 1)) })
+            }
           />
-        </label>
-
-        <label className="field">
-          <span>통계 (statistic)</span>
-          {preset.extendedStatistic ? (
-            <input value={preset.extendedStatistic} disabled />
-          ) : (
-            <select
-              value={r.statistic ?? 'Average'}
-              onChange={(e) => onPatch({ statistic: e.target.value })}
-            >
-              {STATISTIC_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          )}
-        </label>
-
-        <label className="field">
-          <span>비교 연산자</span>
-          <select
-            value={r.comparisonOperator}
-            onChange={(e) => onPatch({ comparisonOperator: e.target.value })}
-          >
-            {OPERATOR_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
         </label>
 
         <label className="field">
@@ -140,6 +100,18 @@ export function MetricAdvanced({ preset, selection, hideSeverity, onPatch, onRes
           </label>
         )}
       </div>
+
+      <label className="field field-inline" style={{ marginTop: 10 }}>
+        <span>
+          경보 설명 <em>선택</em>
+        </span>
+        <textarea
+          rows={2}
+          value={selection.description ?? ''}
+          placeholder="비워두면 지표·조건으로 자동 생성된 설명이 들어갑니다."
+          onChange={(e) => onPatch({ description: e.target.value })}
+        />
+      </label>
 
       <p className="eval-summary">
         {fmt(totalWindow)} 창을 {r.evaluationPeriods}개 구간으로 보고, 그중{' '}

@@ -14,6 +14,10 @@ export interface ExtraDimension {
   name: string;
   label: string;
   placeholder: string;
+  /** 기본값(비워두면 이 값이 쓰인다). 예: path 의 '/'. */
+  default?: string;
+  /** false 면 비워도 검증 오류로 보지 않는다(기본은 필수). */
+  required?: boolean;
 }
 
 /** Lv1/Lv2/Lv3 단계 알람 정의. 한 지표를 임계값·심각도별로 여러 알람으로 만든다. */
@@ -54,6 +58,8 @@ export interface MetricPreset {
 export interface ResourceType {
   key: string;
   label: string;
+  /** 표준(템플릿) 요약 등에서 쓰는 짧은 표시 이름. 없으면 label 사용. */
+  shortLabel?: string;
   /** 알람 이름에 들어가는 축약 코드 */
   shortCode: string;
   dimensionName: string;
@@ -72,9 +78,11 @@ export interface TagPair {
 export interface GlobalConfig {
   prefix: string;
   region: string;
-  snsCritical: string;
-  snsWarning: string;
-  splitSeverity: boolean;
+  /**
+   * 알람이 붙일 SNS Topic ARN 목록. 모든 토픽이 모든 알람의
+   * --alarm-actions / --ok-actions 에 함께 들어간다. 최소 1개 필요.
+   */
+  snsTopics: string[];
   namingMode: 'auto' | 'manual';
   /** 사용자가 자유롭게 추가하는 태그. 비어 있으면 --tags 를 아예 넣지 않는다. */
   tags: TagPair[];
@@ -100,6 +108,17 @@ export interface MetricSelection {
   comparisonOperator?: string;
   severity?: Severity;
 
+  /** 사용자가 직접 쓴 경보 설명. 비어 있으면 지표·조건으로 자동 생성한다. */
+  description?: string;
+
+  /** 레벨 지표를 단계(Lv1/2/3) 대신 단일 임계값 알람 하나로 만든다. */
+  single?: boolean;
+
+  /** true면 정적 임계값 대신 이상 탐지(ANOMALY_DETECTION_BAND)로 만든다. */
+  anomaly?: boolean;
+  /** 이상 탐지 밴드 폭(표준편차 배수). 기본 2. anomaly일 때만 사용. */
+  bandWidth?: number;
+
   /** 단계(Lv1/Lv2/Lv3) 알람의 레벨별 선택·임계값. 레벨 지표에서만 사용. */
   levels?: Record<string, { enabled: boolean; threshold: number }>;
 }
@@ -111,6 +130,8 @@ export interface MetricSelection {
 export interface SelectedMetric extends MetricSelection {
   uid: string;
   metricKey: string;
+  /** 지표 복제로 만들어진 복제본이면 true (원본은 표시하지 않는다). */
+  duplicated?: boolean;
 }
 
 /** 카탈로그에 없는 지표를 리소스에 직접 추가할 때 쓴다. */
@@ -163,7 +184,15 @@ export interface AlarmSpec {
   thresholdUnit: ThresholdUnit;
   comparisonOperator: string;
   treatMissingData: string;
-  snsTopicArn: string;
+
+  /** 이상 탐지 알람이면 true. CLI는 --metrics + --threshold-metric-id 로 나간다. */
+  anomaly?: boolean;
+  /** 이상 탐지 밴드 폭(표준편차 배수). anomaly일 때만. */
+  bandWidth?: number;
+  /** 이상 탐지 밴드 표현식의 metric id (예: 'ad1'). anomaly일 때만. */
+  thresholdMetricId?: string;
+  /** 이 알람이 붙일 SNS Topic ARN 목록 (전역 설정에서 옴). */
+  snsTopicArns: string[];
   catalogKey: string;
   resourceType: string;
   resourceId: string;

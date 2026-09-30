@@ -5,7 +5,7 @@ AI 에이전트가 이 저장소에서 작업하기 전에 **반드시 먼저 �
 
 ## 0. 먼저 읽을 것 (정본)
 
-- **[`cw-alarm-generator.md`](./cw-alarm-generator.md) 의 "⛔ 절대 금지 목록"** — 실행·안전 규칙의
+- **[`cw-alarm-generator.md`](./cw-alarm-generator.md) 의 "절대 금지 목록"** — 실행·안전 규칙의
   **정본**. 이 AGENTS.md는 포인터일 뿐이며, 규칙이 다르면 `cw-alarm-generator.md`가 우선한다.
 - [`catalog-metrics.md`](./catalog-metrics.md) — 지표 카탈로그 목록 (JSON에서 자동 생성).
 
@@ -15,9 +15,9 @@ AI 에이전트가 이 저장소에서 작업하기 전에 **반드시 먼저 �
 > 리소스 변경·삭제, 기존 알람 삭제, 조회 외 write, 승인 안 된 계정 대상, 자격증명 노출은 금지.
 > 의심스러우면 실행하지 말고 사람에게 확인.
 
-허용 계정은 설정 파일/환경변수로 지정한 계정으로 한정한다(`server/account.local.json` 또는
-`ALLOWED_ACCOUNTS`). 허용되는 쓰기는 `cloudwatch:PutMetricAlarm`(사람이 CloudShell에서 직접
-실행)뿐이다.
+고객 계정 조회는 자격증명 브로커(FITCLOUD 활성 고객 + Slack 로그인 사용자, 읽기 전용 세션)를 통해서만 한다.
+로컬 개발의 역할 직접 assume은 설정 파일·환경변수로 지정한 계정으로 한정한다(`server/account.local.json` 또는
+`ALLOWED_ACCOUNTS`). 허용되는 쓰기는 `cloudwatch:PutMetricAlarm`(사람이 CloudShell에서 직접 실행)뿐이다.
 
 ## 2. 실행 환경
 
@@ -41,7 +41,11 @@ npm run docs       # 카탈로그 → catalog-metrics.md 재생성 (카탈로그
 
 ## 4. 코드로 강제되는 가드 (문서와 별개로 항상 동작)
 
-- `server/discover.mjs` — 조회 API 화이트리스트만 실행(그 외 403 차단).
 - `src/lib/safety.ts` — 산출 스크립트에 `put-metric-alarm` 외/파괴적 명령이 섞이면 차단.
+- `server/core.mjs` — 조회 계열 SDK 명령만 들어 있다(생성·변경·삭제 명령 없음). 역할 이름 화이트리스트.
+- 브로커 `lib/customer-assume.mjs` — 고객 세션에 `ReadOnlyAccess` 세션 정책을 서버에서 부착.
+- `server/lambda.mjs` — OAuth 구성 시 로그인 세션 없는 `/api/*` 요청은 401.
+
+전체 목록은 `cw-alarm-generator.md`의 "코드로 강제되는 가드".
 
 문서 규칙은 권고, 위 코드 가드는 강제. 둘 다 지킨다.

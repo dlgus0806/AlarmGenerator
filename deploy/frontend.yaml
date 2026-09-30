@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudWatch Alarm Generator - 정적 프론트엔드 호스팅.
+  비공개 S3 버킷 + CloudFront(OAC). 버킷은 CloudFront 를 통해서만 접근된다.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: '전역에서 유일한 S3 버킷 이름 (예 cw-alarm-gen-web-<계정>)'
+  FunctionUrlDomain:
+    Type: String
+    Default: ''
+    Description: '조회 백엔드 Lambda Function URL 호스트명(backend 스택 출력). 비우면 프론트만 배포하고 /api/* 라우팅을 만들지 않는다.'
+
+Conditions:
+  HasApi: !Not [!Equals [!Ref FunctionUrlDomain, '']]
+
+Resources:
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${BucketName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Lambda Function URL 서명용 OAC (조회 API 라우팅이 있을 때만).
+  LambdaOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: HasApi
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${BucketName}-lambda-oac'
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins: !If
+          - HasApi
+          - - Id: s3origin
+              DomainName: !GetAtt SiteBucket.RegionalDomainName
+              OriginAccessControlId: !GetAtt OriginAccessControl.Id
+              S3OriginConfig:
+                OriginAccessIdentity: ''
+            - Id: lambdaorigin
+              DomainName: !Ref FunctionUrlDomain
+              OriginAccessControlId: !GetAtt LambdaOAC.Id
+              CustomOriginConfig:
+                OriginProtocolPolicy: https-only
+                OriginSSLProtocols: [TLSv1.2]
+                # Bedrock 응답이 느릴 수 있어 원본 읽기 타임아웃을 최대(60s)로.
+                OriginReadTimeout: 60
+          - - Id: s3origin
+              DomainName: !GetAtt SiteBucket.RegionalDomainName
+              OriginAccessControlId: !GetAtt OriginAccessControl.Id
+              S3OriginConfig:
+                OriginAccessIdentity: ''
+        # /api/* 는 Lambda 오리진으로 (캐시 없음, 뷰어 헤더·쿼리 전달).
+        CacheBehaviors: !If
+          - HasApi
+          - - PathPattern: /api/*
+              TargetOriginId: lambdaorigin
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods: [GET, HEAD, OPTIONS]
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+              OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - !Ref AWS::NoValue
+        DefaultCacheBehavior:
+          TargetOriginId: s3origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          # AWS 관리형 CachingOptimized 정책
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        PriceClass: PriceClass_200
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${SiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution.Id}'
+
+Outputs:
+  BucketName:
+    Value: !Ref SiteBucket
+  DistributionId:
+    Value: !Ref Distribution
+  DistributionDomainName:
+    Description: 프론트 접속 URL (https://)
+    Value: !GetAtt Distribution.DomainName
