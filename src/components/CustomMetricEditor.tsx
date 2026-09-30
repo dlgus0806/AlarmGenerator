@@ -1,9 +1,8 @@
-import type { CustomMetric, ResourceType, Severity } from '../types';
+import type { CustomMetric, ResourceType } from '../types';
 import {
   MISSING_DATA_OPTIONS,
   OPERATOR_OPTIONS,
   PERIOD_OPTIONS,
-  SEVERITY_OPTIONS,
   STATISTIC_OPTIONS,
 } from '../lib/build';
 
@@ -171,19 +170,7 @@ export function CustomMetricEditor({ metric, type, onPatch, onRemove }: Props) {
               </option>
             ))}
           </select>
-        </label>
-        <label className="field">
-          <span>심각도</span>
-          <select
-            value={metric.severity}
-            onChange={(e) => onPatch({ severity: e.target.value as Severity })}
-          >
-            {SEVERITY_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <small>{MISSING_DATA_OPTIONS.find((o) => o.value === metric.treatMissingData)?.desc}</small>
         </label>
         <label className="field">
           <span>Unit (선택)</span>

@@ -82,17 +82,14 @@ code, pre, textarea.mono {
 .btn-slack { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .btn-slack:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); filter: brightness(1.08); }
 
-/* 로그인 사용자 칩: "이름 | 로그아웃" 한 덩어리 (theme-btn 과 같은 외형) */
+/* 로그인 사용자 칩: [이름 | 로그아웃(파랑 버튼)] 한 덩어리 (theme-btn 과 같은 높이) */
 .user-chip {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 10px;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 6px 12px; font-size: 14px; color: var(--text);
+  padding: 3px 3px 3px 12px; font-size: 14px; color: var(--text);
 }
-.user-chip-sep { color: var(--line); }
-.user-chip-logout {
-  background: none; border: 0; padding: 0; font: inherit; color: var(--muted); cursor: pointer;
-}
-.user-chip-logout:hover { color: var(--accent); }
+.user-chip .user-chip-logout { padding: 3px 10px; }
+.user-chip .user-chip-logout:hover { filter: brightness(1.08); }
 
 /* 사내 전용 로그인 오버레이 — 앱을 뒤에 흐리게 깔고 그 위에 모달 */
 .login-overlay {
@@ -127,6 +124,10 @@ code, pre, textarea.mono {
   /* 남은 세로 공간을 모두 차지하고, 컬럼이 이 높이 안에서 스크롤되게 한다. */
   flex: 1 1 auto; min-height: 0;
 }
+
+/* 숨김만 하고 상태는 유지하는 래퍼. 보일 때는 레이아웃에 영향이 없게(자식이 부모 flex gap 을 그대로 받음) */
+.keep-alive { display: contents; }
+.keep-alive[hidden] { display: none; }
 
 .col-left, .col-right {
   display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0;
@@ -248,9 +249,6 @@ textarea { resize: vertical; }
 .metric-title { flex: 1; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 15px; }
 .metric-name { color: var(--muted); font-size: 13px; }
 
-.sev { font-size: 12px; padding: 2px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
-.sev-critical { color: var(--crit); border-color: var(--crit); }
-.sev-warning { color: var(--warn); border-color: var(--warn); }
 
 .metric-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; padding-left: 26px; }
 .badge {
@@ -456,13 +454,53 @@ textarea { resize: vertical; }
 }
 .ai-preflight-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .ai-preflight-title strong { font-size: 15px; }
-.preflight-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 2px; }
-.preflight-table th, .preflight-table td {
-  border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top;
-  word-break: break-all;
+/* AI 점검 표: 열 폭 고정 + 좁은 화면에선 가로 스크롤. 상태·비고는 줄바꿈 없는 칩 */
+.preflight-table-wrap {
+  overflow-x: auto; margin-top: 2px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
 }
-.preflight-table th { background: var(--panel-2); color: var(--muted); font-weight: 600; }
-.preflight-table td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.preflight-table { width: 100%; min-width: 560px; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.preflight-table .pt-col-name { width: 40%; }
+.preflight-table .pt-col-metric { width: 30%; }
+.preflight-table .pt-col-status { width: 84px; }
+.preflight-table th, .preflight-table td {
+  padding: 8px 10px; text-align: left; vertical-align: middle;
+  border-bottom: 1px solid var(--line);
+}
+.preflight-table tbody tr:last-child td { border-bottom: 0; }
+.preflight-table tbody tr:hover td { background: var(--panel-2); }
+.preflight-table th {
+  background: var(--panel-2); color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap;
+}
+.preflight-table .pt-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.preflight-table .pt-metric { line-height: 1.35; }
+.preflight-table .pt-ns { display: block; font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.preflight-table .pt-metric-name { display: block; overflow-wrap: anywhere; }
+.pt-chip {
+  display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 500;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+}
+.pt-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.pt-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+.pt-chip.err {
+  color: var(--err); border-color: color-mix(in srgb, var(--err) 50%, var(--line));
+  background: color-mix(in srgb, var(--err) 6%, transparent);
+}
+
+/* 추가 구성 · 알림 보낼 SNS 토픽 */
+.sns-route-list { list-style: none; margin: 4px 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sns-route-list .checkline {
+  display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text);
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+}
+.sns-route-name { font-weight: 600; white-space: nowrap; }
+.sns-route-arn {
+  font-size: 12px; color: var(--muted); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .ai-judgment {
   margin-top: 10px; padding: 10px 11px; border: 1px solid var(--line);
   border-radius: 6px; background: var(--panel-2); font-size: 14px;
@@ -532,28 +570,28 @@ textarea { resize: vertical; }
 
 /* ---- 계정 연결 ---- */
 .btn-sm { padding: 4px 10px; font-size: 13px; }
-.account-row { display: flex; gap: 8px; align-items: stretch; }
-.account-row input { flex: 1; min-width: 0; }
+/* 한 줄: [계정 ID 입력] [리전] [확인] [새로고침]. 좁으면 줄바꿈 */
+.account-row { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
 .account-row .btn { flex-shrink: 0; white-space: nowrap; }
+.account-input { position: relative; flex: 0 1 280px; min-width: 200px; display: flex; }
+.account-input input { flex: 1; min-width: 0; }
+/* 연결되면 입력칸 자체가 초록으로 — 별도 상태 줄 없이 연결 여부를 보인다 */
+.account-input.is-connected input {
+  border-color: var(--ok); color: var(--text); font-weight: 600; padding-right: 84px;
+  background: color-mix(in srgb, var(--ok) 9%, var(--bg));
+}
+.account-input-suffix {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ok); font-size: var(--fs-help); font-weight: 600; pointer-events: none;
+}
+.account-region { align-self: center; white-space: nowrap; }
 /* 확인 완료 버튼은 비활성이어도 흐리게 두지 않고 초록으로 상태를 보여준다 */
 .btn.btn-done,
 .btn.btn-done:disabled {
   opacity: 1; background: transparent; color: var(--ok); border-color: var(--ok); font-weight: 600;
   cursor: default;
 }
-.account-status {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-  margin-top: 10px; padding: 8px 12px; border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
-  background: color-mix(in srgb, var(--ok) 8%, var(--panel));
-}
-.account-status-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; color: var(--ok); }
-/* 계정 번호와 별칭은 같은 글꼴·굵기·크기로 */
-.account-status-main strong,
-.account-status-alias {
-  color: var(--text); font-family: inherit; font-size: 14px; font-weight: 600;
-}
-.account-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 .list-toolbar {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   padding-bottom: 6px; border-bottom: 1px solid var(--line);
@@ -563,15 +601,70 @@ textarea { resize: vertical; }
 
 /* ---- 리소스 불러오기 ---- */
 .live-box { border: 1px solid var(--line); border-radius: 6px; padding: 10px 11px; background: var(--panel-2); margin-top: 4px; }
-.discover-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.discover-row {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; background: var(--bg);
+/* 불러온 리소스: 툴바 / 종류별 묶음(스크롤) / 하단 고정 버튼 */
+.discover {
+  margin-top: 12px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg); overflow: hidden;
 }
-.discover-row.unsupported { opacity: 0.55; }
-.discover-label { font-size: 15px; }
-.discover-id { font-size: 13px; color: var(--accent); word-break: break-all; }
-.discover-detail { font-size: 13px; color: var(--muted); margin-left: auto; }
+.discover-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.discover-toolbar .discover-search { flex: 1 1 200px; min-width: 0; padding: 5px 10px; }
+.discover-count { color: var(--muted); white-space: nowrap; }
+.discover-count strong { color: var(--text); }
+/* 목록 영역: 리소스 약 8개 분량. 위쪽 여백을 두지 않아야 스크롤된 항목이 고정 제목 위로 비치지 않는다 */
+.discover-scroll { max-height: 560px; overflow-y: auto; padding: 0 12px 10px; }
+.discover-empty { margin: 14px 0; text-align: center; color: var(--muted); }
+/* 일부 서비스 조회 실패 안내 (툴바 바로 아래 한 줄) */
+.discover-warn {
+  margin: 0; padding: 6px 12px; border-bottom: 1px solid var(--line);
+  color: var(--warn); font-size: var(--fs-help);
+}
+.discover-group + .discover-group { margin-top: 10px; }
+/* 묶음 제목: 스크롤해도 위에 붙고, 좌우 끝까지 덮어 아래 항목이 옆으로 비치지 않게 한다 */
+.discover-group-head {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  position: sticky; top: 0; z-index: 2;
+  margin: 0 -12px 6px; padding: 8px 14px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.discover-group + .discover-group .discover-group-head { border-top: 1px solid var(--line); }
+.discover-group-head input { width: auto; margin: 0; }
+.discover-group-name { font-weight: 600; color: var(--text); }
+.discover-group-count {
+  padding: 0 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); line-height: 18px;
+}
+.discover-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.discover-row {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--panel);
+  transition: border-color .12s, background .12s;
+}
+.discover-row:hover { border-color: var(--accent); }
+.discover-row.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+.discover-row.unsupported { opacity: 0.55; cursor: not-allowed; }
+.discover-row.unsupported:hover { border-color: var(--line); }
+.discover-row input { width: auto; margin: 0; flex-shrink: 0; }
+/* 이름(위)·ID(아래)를 쌓아 ID 가 짓눌리지 않게, 긴 값은 말줄임 (전체 ID는 마우스 올리면 보임) */
+.discover-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.discover-label { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discover-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; padding: 0;
+}
+.discover-chips { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.d-chip {
+  white-space: nowrap; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); background: var(--bg);
+}
+.d-chip.state-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.d-chip.state-off { color: var(--muted); }
+.d-chip.state-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+.discover-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel);
+}
 
 .custom-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .custom-metric {
@@ -677,3 +770,104 @@ textarea { resize: vertical; }
 }
 /* 탭마다 버튼 글자가 달라도 버튼 폭은 그대로 */
 .help-nav .btn { width: 130px; }
+
+/* ==========================================================================
+   글자 크기 체계 (앱 전체 통일)
+   위 규칙들에 흩어져 있던 11~16px 값을 역할별 6단계로 모은다. 같은 역할이면 같은 크기.
+     --fs-h1    컬럼 제목 (1 알람 구성, 2 검증 & 산출물)
+     --fs-h2    패널 제목 (전역 설정, AI 어시스턴트, 사전 검증 …) — 왼쪽 파랑 막대로 구분
+     --fs-tab   구성 방식 탭 제목 (AI 어시스턴트 / 표준 템플릿 / 리소스 선택)
+     --fs-h3    섹션 제목 (지표 / 조건 설정 / 추가 구성, 지표 이름, 선택 카드 제목)
+     --fs-body  본문 · 입력값 · 목록 항목 · 버튼
+     --fs-label 입력칸 소제목 (진하게)
+     --fs-help  설명 · 도움말 · 요약 (회색)
+     --fs-meta  칩 · 배지 · 태그
+   ========================================================================== */
+:root {
+  --fs-h1: 19px;
+  --fs-h2: 17px;
+  --fs-tab: 16px;
+  --fs-h3: 15px;
+  --fs-body: 14px;
+  --fs-label: 13px;
+  --fs-help: 13px;
+  --fs-meta: 12px;
+}
+
+/* 제목 */
+.col-title { font-size: var(--fs-h1); font-weight: 700; letter-spacing: -0.01em; }
+/* 패널 제목: 크게·진하게 + 왼쪽 파랑 막대. 본문·설명과 한눈에 구분되게 */
+.panel h2 {
+  font-size: var(--fs-h2); font-weight: 700; color: var(--text); letter-spacing: -0.01em;
+}
+.panel h2::before {
+  content: ''; flex: 0 0 auto; align-self: center;
+  width: 4px; height: 1.05em; border-radius: 2px; background: var(--accent);
+}
+.method-tab-title { font-size: var(--fs-tab); font-weight: 700; }
+.advanced > summary, .advanced > summary::before, .mc-group-title,
+.metric-title, .ai-preflight-title strong, .template-name {
+  font-size: var(--fs-h3);
+}
+
+/* 본문 · 입력값 */
+input[type='text'], input:not([type]), input[type='number'], input[type='search'], select, textarea,
+.mc-ro-val, .mc-card b, .checkline, .btn, .stat, .theme-btn, .user-chip,
+.discover-label, .discover-group-name, .finding-msg, .ai-judgment, .ai-verdict,
+.more-toggle, .inline-error {
+  font-size: var(--fs-body);
+}
+.btn.btn-sm { font-size: var(--fs-help); }
+
+/* 입력칸 소제목: 진하게, 본문색 — 설명(회색)과 확실히 구분 */
+.field > span, .field > label, .global-panel .field > span, .mc-ro > span, .mc-sub, .level-title {
+  font-size: var(--fs-label); font-weight: 600; color: var(--text);
+}
+.field > span em { font-size: var(--fs-meta); font-weight: 500; }
+
+/* 설명 · 도움말 · 요약 */
+.hint, .field small, .global-panel .field small, .col-sub, .method-tab-sub, .mc-card small,
+.eval-summary, .mc-cond-summary, .metric-name, .metric-note, .finding-fix, .template-sum,
+.more-summary, .discover-count, .discover-id, .discover-empty, .list-toolbar-count, .ai-stale {
+  font-size: var(--fs-help);
+}
+
+/* 칩 · 배지 · 태그 */
+.badge, .tag, .sev, .instance-tag, .override-badge, .pt-chip, .d-chip, .discover-group-count,
+.finding-alarm, .finding-count, .preflight-table th, .preflight-table .pt-ns, .sns-route-arn {
+  font-size: var(--fs-meta);
+}
+
+/* 알람 이름 직접 입력: 앞에 prefix 를 고정 표시 */
+.name-input { display: flex; align-items: stretch; min-width: 0; }
+.name-input input { flex: 1; min-width: 0; }
+.name-input-prefix {
+  display: flex; align-items: center; padding: 0 8px; white-space: nowrap;
+  border: 1px solid var(--line); border-right: 0; border-radius: 6px 0 0 6px;
+  background: var(--panel-2); color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-label);
+}
+.name-input-prefix + input { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+/* 탭에 붙는 작은 점: AI 점검 결과가 현재 구성과 달라졌음을 알린다 */
+.tab-dot {
+  display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%;
+  background: var(--warn); vertical-align: middle;
+}
+
+/* ---- 글자 잘림 방지 ---- */
+/* 선택칸: 폭보다 긴 항목은 잘라내지 말고 말줄임. 그리드 칸은 최소 폭을 넉넉히 */
+select { text-overflow: ellipsis; min-width: 0; }
+.advanced-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.field { min-width: 0; }
+/* 읽기 전용 값 칸: 고정폭 글꼴 대신 줄바꿈이 자연스럽게 */
+.mc-ro-val { word-break: normal; overflow-wrap: anywhere; }
+/* 리소스 ID 칸은 두 칸을 차지 (칸이 2개 이상 들어갈 만큼 넓을 때만) */
+.mc-group { container-type: inline-size; }
+@container (min-width: 340px) {
+  .mc-ro-wide { grid-column: span 2; }
+}
+.mc-ro-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-label); }
+/* 접힌 섹션 제목 오른쪽 요약: 길면 말줄임 */
+.advanced > summary { min-width: 0; }
+.mc-cond-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -5,6 +5,11 @@ function q(value: string): string {
   return `"${value.replace(/([\\"$`])/g, '\\$1')}"`;
 }
 
+/** 전역 설정의 SNS 토픽(공백 제거, 빈 값·중복 제외, 순서 유지). */
+function uniqueTopics(global: GlobalConfig): string[] {
+  return [...new Set((global.snsTopics ?? []).map((t) => t.trim()).filter(Boolean))];
+}
+
 /**
  * AWS 태그 값 허용 문자: 유니코드 문자·숫자, 공백, 그리고 + - = . _ : / @
  * '%'는 허용되지 않는다. 임계값 단위 기호를 그대로 태그에 넣으면 API가 거부한다.
@@ -102,10 +107,16 @@ function renderAlarm(spec: AlarmSpec, global: GlobalConfig, index: number, total
   flags.push(
     `--comparison-operator ${spec.comparisonOperator}`,
     `--treat-missing-data ${spec.treatMissingData}`,
-    // 배열의 모든 토픽을 개별 인자로 펼친다("${SNS_TOPICS[@]}").
-    `--alarm-actions "\${SNS_TOPICS[@]}"`,
-    `--ok-actions "\${SNS_TOPICS[@]}"`,
   );
+
+  // SNS 라우팅: 전역 토픽 전부로 보내면 공통 배열("${SNS_TOPICS[@]}")을 쓰고,
+  // 일부만 고른 지표는 그 ARN을 직접 넣는다. (사전 검증이 빈 선택을 오류로 막는다)
+  const allTopics = uniqueTopics(global);
+  const mine = spec.snsTopicArns;
+  const routesToAll =
+    mine.length === allTopics.length && allTopics.every((t) => mine.includes(t));
+  const actions = routesToAll ? `"\${SNS_TOPICS[@]}"` : mine.map((t) => q(t)).join(' ');
+  if (actions) flags.push(`--alarm-actions ${actions}`, `--ok-actions ${actions}`);
 
   const tags = validTagPairs(global);
   if (tags.length > 0) flags.push(`--tags ${tags.join(' ')}`);
@@ -141,10 +152,9 @@ export function generateCli(global: GlobalConfig, specs: AlarmSpec[]): string {
     `REGION=${q(global.region)}`,
   ];
 
-  // 모든 알람이 공유하는 SNS 토픽 배열. put-metric-alarm에 "${SNS_TOPICS[@]}"로 펼친다.
-  const topics = (global.snsTopics ?? []).map((t) => t.trim()).filter(Boolean);
-  const uniqueTopics = [...new Set(topics)];
-  header.push(`SNS_TOPICS=(${uniqueTopics.map((t) => q(t)).join(' ')})`);
+  // 전역 토픽 전부로 보내는 알람이 공유하는 배열. "${SNS_TOPICS[@]}"로 펼친다.
+  // 일부 토픽만 고른 알람은 블록 안에 ARN을 직접 적는다.
+  header.push(`SNS_TOPICS=(${uniqueTopics(global).map((t) => q(t)).join(' ')})`);
 
   // 알람 블록 사이에 빈 줄을 넣어 붙여넣었을 때 읽기 쉽게 한다.
   const body = specs.flatMap((s, i) => [renderAlarm(s, global, i, specs.length), '']);

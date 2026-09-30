@@ -18,6 +18,11 @@ export interface ExtraDimension {
   default?: string;
   /** false 면 비워도 검증 오류로 보지 않는다(기본은 필수). */
   required?: boolean;
+  /**
+   * true 면 이 디멘션 값을 알람 이름의 리소스 앞에 넣는다.
+   * 예) ECS ClusterName — 클러스터가 달라도 서비스 이름이 같은 경우가 많아 이름이 겹치지 않게.
+   */
+  inName?: boolean;
 }
 
 /** Lv1/Lv2/Lv3 단계 알람 정의. 한 지표를 임계값·심각도별로 여러 알람으로 만든다. */
@@ -108,6 +113,13 @@ export interface MetricSelection {
   comparisonOperator?: string;
   severity?: Severity;
 
+  /**
+   * 이 지표의 알람이 알림을 보낼 SNS 토픽(ARN). 전역 설정의 토픽 중에서 고른다.
+   * 없으면(undefined) 전역 설정의 모든 토픽으로 보낸다 — 나중에 추가한 토픽도 자동 포함.
+   * 전역 설정에서 지워진 토픽은 무시한다.
+   */
+  snsTopics?: string[];
+
   /** 사용자가 직접 쓴 경보 설명. 비어 있으면 지표·조건으로 자동 생성한다. */
   description?: string;
 
@@ -162,6 +174,11 @@ export interface ResourceEntry {
   resourceId: string;
   selected: SelectedMetric[];
   customMetrics?: CustomMetric[];
+  /**
+   * 계정 조회로 알아낸 추가 디멘션 값 (예: ECS ClusterName, 대상 그룹의 LoadBalancer).
+   * 지표를 새로 켤 때 extraDimValues 초기값으로 채운다.
+   */
+  dimHints?: Record<string, string>;
 }
 
 /** 생성기에 넘어가는 최종 알람 명세 */

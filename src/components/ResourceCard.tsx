@@ -17,10 +17,13 @@ import {
   PERIOD_OPTIONS,
   STATISTIC_LABELS,
   STATISTIC_OPTIONS,
+  globalTopics,
   initLevels,
   operatorSymbol,
   resolveMetric,
+  nameScope,
   unitLabel,
+  withPrefix,
 } from '../lib/build';
 import { MetricAdvanced } from './MetricAdvanced';
 import { CustomMetricEditor, newCustomMetric } from './CustomMetricEditor';
@@ -43,6 +46,22 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
 
   const instancesOf = (key: string) => entry.selected.filter((s) => s.metricKey === key);
 
+  /**
+   * 새로 켜는 지표의 추가 디멘션 초기값. 이미 켜진 다른 지표에 입력한 값 → 계정 조회 힌트 순으로
+   * 채워, ClusterName·LoadBalancer 같은 값을 지표마다 다시 적지 않게 한다.
+   */
+  const inheritDims = (preset: MetricPreset): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const d of preset.extraDimensions ?? []) {
+      const fromSibling = entry.selected
+        .map((s) => s.extraDimValues[d.name]?.trim())
+        .find((v) => v);
+      const v = fromSibling || entry.dimHints?.[d.name];
+      if (v) out[d.name] = v;
+    }
+    return out;
+  };
+
   const toggleMetric = (preset: MetricPreset, on: boolean) => {
     if (on) {
       setSelected([
@@ -52,7 +71,7 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
           metricKey: preset.key,
           threshold: preset.threshold,
           customName: '',
-          extraDimValues: {},
+          extraDimValues: inheritDims(preset),
           levels: initLevels(preset),
         },
       ]);
@@ -132,7 +151,7 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
       shortCode: type.shortCode,
       resourceId: entry.resourceId,
       metricKey: anomaly ? `${preset.key}-anomaly` : preset.key,
-      severity: r.severity,
+      scope: nameScope(preset, inst.extraDimValues),
       threshold: anomaly ? undefined : inst.threshold,
       thresholdUnit: anomaly ? undefined : preset.thresholdUnit,
     });
@@ -164,7 +183,7 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
                         shortCode: type.shortCode,
                         resourceId: entry.resourceId,
                         metricKey: `${preset.key}-${lv.level.toLowerCase()}`,
-                        severity: lv.severity,
+                        scope: nameScope(preset, inst.extraDimValues),
                         threshold: inst.levels?.[lv.level]?.threshold ?? lv.threshold,
                         thresholdUnit: preset.thresholdUnit,
                       })}
@@ -174,7 +193,7 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
             ) : (
               <code>
                 {global.namingMode === 'manual' && inst.customName.trim()
-                  ? inst.customName.trim()
+                  ? withPrefix(global.prefix, inst.customName.trim())
                   : autoName}
               </code>
             )}
@@ -211,9 +230,10 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
               <div className="mc-ro-val">{preset.metricName}</div>
             </div>
             {type.dimensionName && (
-              <div className="mc-ro">
+              // 리소스 ID는 길어서 두 칸을 차지하게 해 줄이 끊기지 않게 한다.
+              <div className="mc-ro mc-ro-wide">
                 <span>{type.dimensionName}</span>
-                <div className="mc-ro-val">
+                <div className="mc-ro-val mc-ro-id" title={entry.resourceId.trim() || undefined}>
                   {entry.resourceId.trim() || <em className="mc-empty">{type.idPlaceholder}</em>}
                 </div>
               </div>
@@ -417,7 +437,6 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
                         />
                         <b>{lv.level}</b>
                       </label>
-                      <span className={`sev sev-${lv.severity}`}>{lv.severity}</span>
                     </div>
                     <span className="input-unit">
                       <input
@@ -461,18 +480,31 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
         {global.namingMode === 'manual' && (
           <label className="field field-inline">
             <span>알람 이름 직접 입력</span>
-            <input
-              value={inst.customName}
-              placeholder={autoName}
-              onChange={(e) => patchInstance(inst.uid, { customName: e.target.value })}
-            />
+            {/* 전역 prefix 는 자동으로 앞에 붙는다 — 입력칸 앞에 고정 표시 */}
+            <span className="name-input">
+              {global.prefix.trim() && (
+                <span className="name-input-prefix">{global.prefix.trim()}-</span>
+              )}
+              <input
+                value={inst.customName}
+                placeholder={
+                  global.prefix.trim() && autoName.startsWith(`${global.prefix.trim()}-`)
+                    ? autoName.slice(global.prefix.trim().length + 1)
+                    : autoName
+                }
+                onChange={(e) => patchInstance(inst.uid, { customName: e.target.value })}
+              />
+            </span>
+            {global.prefix.trim() && (
+              <small>전역 설정의 prefix가 앞에 붙습니다. 이미 prefix로 시작하게 적으면 한 번만 붙습니다.</small>
+            )}
           </label>
         )}
 
         <MetricAdvanced
           preset={preset}
           selection={inst}
-          hideSeverity={isLevel && !anomaly && !single}
+          topics={globalTopics(global)}
           onPatch={(patch) => patchInstance(inst.uid, patch)}
           onReset={() => resetInstance(inst.uid, preset)}
         />
@@ -484,7 +516,6 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
   const renderMetric = (preset: MetricPreset) => {
     const instances = instancesOf(preset.key);
     const on = instances.length > 0;
-    const headSeverity = on ? resolveMetric(preset, instances[0]).severity : preset.severity;
 
     return (
       <div key={preset.key} className={`metric ${on ? 'metric-on' : ''}`}>
@@ -498,7 +529,6 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
             {preset.label}
             <code className="metric-name">{preset.metricName}</code>
           </span>
-          <span className={`sev sev-${headSeverity}`}>{headSeverity}</span>
         </label>
 
         <div className="metric-badges">
@@ -583,7 +613,7 @@ export function ResourceCard({ entry, global, onChange, onRemove, onDuplicate }:
           />
         ))}
         <button
-          className="btn btn-ghost"
+          className="btn btn-primary"
           style={{ marginTop: 8 }}
           onClick={() => onChange({ customMetrics: [...customMetrics, newCustomMetric()] })}
         >

@@ -31,6 +31,27 @@ function extractProposal(text: string): string {
   return '';
 }
 
+const KIND_ORDER: DiscoveredResource['kind'][] = [
+  'EC2',
+  'ASG',
+  'RDS',
+  'ELB',
+  'TG',
+  'ECS',
+  'Lambda',
+  'CloudFront',
+];
+const KIND_LABEL: Record<DiscoveredResource['kind'], string> = {
+  EC2: 'EC2 인스턴스',
+  ASG: 'Auto Scaling 그룹',
+  RDS: 'RDS · Aurora',
+  ELB: '로드 밸런서',
+  TG: '대상 그룹 (ALB)',
+  ECS: 'ECS 서비스',
+  Lambda: 'Lambda 함수',
+  CloudFront: 'CloudFront 배포 (글로벌)',
+};
+
 const DEFAULT_ACCOUNT_QUESTION =
   '이 계정의 리소스를 점검해서 리소스별로 반드시 있어야 할 핵심 알람(가용성·포화·지연 위주)을 ' +
   '우선순위대로 추천해줘. 최근 지표를 근거로 과민하지 않은 임계값을 쓰고, 오탐이 날 만한 알람은 피해줘. ' +
@@ -69,11 +90,17 @@ export function AiPanel({
   // 검증(계정 조회) 결과로 만든 리소스 목록. 체크해서 카드로 만든다.
   const [found, setFound] = useState<DiscoveredResource[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
+  // 목록 검색어 (이름·ID 부분 일치)
+  const [query, setQuery] = useState('');
+  // 일부 서비스 조회 실패(권한 없음 등) 안내. 나머지 목록은 그대로 보여준다.
+  const [discoverWarnings, setDiscoverWarnings] = useState<string[]>([]);
 
   const [answer, setAnswer] = useState('');
   const [resultJson, setResultJson] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // 계정 확인·새로고침 오류는 계정 연결 패널에 따로 보여준다.
+  const [accountError, setAccountError] = useState('');
   const [msg, setMsg] = useState('');
   const [applied, setApplied] = useState<{
     resources: number;
@@ -101,6 +128,7 @@ export function AiPanel({
 
   function showList(list: DiscoveredResource[]) {
     setFound(list);
+    setQuery('');
     setPicked(
       new Set(list.map((_, i) => i).filter((i) => !list[i].unsupported && list[i].typeKey)),
     );
@@ -122,6 +150,18 @@ export function AiPanel({
 
   function clearAll() {
     setPicked(new Set());
+  }
+
+  /** 한 묶음(EC2/RDS/ELB)의 선택 가능한 항목을 한 번에 켜거나 끈다. */
+  function toggleGroup(indexes: number[], on: boolean) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const i of indexes) {
+        if (on) next.add(i);
+        else next.delete(i);
+      }
+      return next;
+    });
   }
 
   function createCards() {
@@ -163,7 +203,8 @@ export function AiPanel({
       const j = JSON.parse(t) as { error?: string };
       throw new Error(j.error ?? `백엔드 오류 (${res.status})`);
     }
-    const d = JSON.parse(t) as { account?: string; alias?: string };
+    const d = JSON.parse(t) as { account?: string; alias?: string; warnings?: string[] };
+    setDiscoverWarnings(Array.isArray(d.warnings) ? d.warnings : []);
     setValidatedAccount(d.account ?? id);
     setValidatedAlias(d.alias ?? '');
     if (markValidated) {
@@ -176,7 +217,7 @@ export function AiPanel({
   // "계정 확인" — 입력한 계정 ID를 검증하고 리소스를 불러온다.
   // 리스트 재로드는 이 버튼(그리고 아래 새로고침)에서만 일어난다.
   async function validateRole() {
-    setError('');
+    setAccountError('');
     setValidating(true);
     try {
       await loadResources(accountId.trim(), true);
@@ -189,7 +230,7 @@ export function AiPanel({
       setPicked(new Set());
       onValidatedRole?.(null);
       const m = e instanceof Error ? e.message : String(e);
-      setError(m.includes('fetch') ? '백엔드에 연결할 수 없습니다.' : m);
+      setAccountError(m.includes('fetch') ? '백엔드에 연결할 수 없습니다.' : m);
     } finally {
       setValidating(false);
     }
@@ -199,20 +240,37 @@ export function AiPanel({
   // (중간에 리소스를 추가했거나 리전을 바꿔 다시 조회하고 싶을 때) 검증 상태는 유지.
   async function refreshResources() {
     if (!validatedId) return;
-    setError('');
+    setAccountError('');
     setRefreshing(true);
     try {
       await loadResources(validatedId, false);
       flash('새로고침 완료');
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
-      setError(m.includes('fetch') ? '백엔드에 연결할 수 없습니다.' : m);
+      setAccountError(m.includes('fetch') ? '백엔드에 연결할 수 없습니다.' : m);
     } finally {
       setRefreshing(false);
     }
   }
 
   const selectableCount = found?.filter((r) => r.typeKey).length ?? 0;
+
+  // 검색어로 거른 뒤 종류별로 묶는다. 인덱스(i)는 원래 목록 기준이라 선택 상태와 그대로 맞는다.
+  const q = query.trim().toLowerCase();
+  const visibleGroups = KIND_ORDER.map((kind) => ({
+    kind,
+    items: (found ?? [])
+      .map((r, i) => ({ r, i }))
+      .filter(
+        ({ r }) =>
+          r.kind === kind &&
+          (!q ||
+            r.label.toLowerCase().includes(q) ||
+            r.resourceId.toLowerCase().includes(q) ||
+            // ECS 클러스터 이름, 엔진 등 칩 정보로도 찾을 수 있게
+            r.meta.some((m) => m.toLowerCase().includes(q))),
+      ),
+  })).filter((g) => g.items.length > 0);
 
   async function run() {
     setError('');
@@ -254,6 +312,178 @@ export function AiPanel({
   }
 
   return (
+    <>
+    {/* 계정 연결 (선택) — AI 어시스턴트 위에 별도 패널로 둔다 */}
+    <section className="panel">
+      <div className="panel-head">
+        <div className="header-title">
+          <h2 style={{ marginBottom: 2 }}>계정 연결 (선택)</h2>
+          <span className="hint" style={{ margin: 0 }}>
+            계정을 연결하면 리소스를 읽어 카드로 만들거나, 그 리소스 기준으로 추천받습니다.
+          </span>
+        </div>
+      </div>
+
+      {/* 한 줄: [계정 ID(연결되면 초록 + 별칭)] [리전] [확인] [새로고침] */}
+      <div className="field" style={{ marginBottom: 0 }}>
+        <label htmlFor="account-id-input">계정 ID (12자리 숫자)</label>
+        <div className="account-row">
+          <span className={`account-input ${validated ? 'is-connected' : ''}`}>
+            <input
+              id="account-id-input"
+              value={accountId}
+              placeholder="055251234567"
+              inputMode="numeric"
+              aria-describedby={validated ? 'account-connected' : undefined}
+              title={
+                validated
+                  ? `연결됨 · ${validatedAccount}${validatedAlias ? ` (${validatedAlias})` : ''}`
+                  : undefined
+              }
+              onChange={(e) => editAccount(e.target.value)}
+            />
+            {validated && (
+              <span id="account-connected" className="account-input-suffix">
+                {validatedAlias ? validatedAlias : '연결됨'}
+              </span>
+            )}
+          </span>
+          <button
+            className={`btn ${validated ? 'btn-done' : 'btn-primary'}`}
+            onClick={validateRole}
+            disabled={!accountIdComplete || validating || validated || needsLogin}
+          >
+            {validating ? '확인 중…' : validated ? '확인됨 ✓' : '계정 확인'}
+          </button>
+          {validated && (
+            <button
+              className="btn btn-ghost"
+              title={`현재 리전(${global.region}) 기준으로 이 계정 리소스를 다시 불러옵니다`}
+              onClick={refreshResources}
+              disabled={refreshing}
+            >
+              {refreshing ? '새로고침 중…' : '↻ 새로고침'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {found && (
+        <div className="discover">
+          {/* 툴바: 검색(왼쪽) + 개수·일괄 선택(오른쪽) */}
+          <div className="discover-toolbar">
+            <input
+              className="discover-search"
+              value={query}
+              placeholder="이름 또는 ID로 찾기"
+              aria-label="리소스 검색"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <span className="discover-count">
+              선택 <strong>{picked.size}</strong> / {selectableCount}
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={selectableCount === 0 || picked.size === selectableCount}
+              onClick={selectAll}
+            >
+              전체 선택
+            </button>
+            <button className="btn btn-ghost btn-sm" disabled={picked.size === 0} onClick={clearAll}>
+              전체 해제
+            </button>
+          </div>
+
+          {discoverWarnings.length > 0 && (
+            <p className="discover-warn" role="status">
+              일부 조회 실패: {discoverWarnings.join(' · ')}
+            </p>
+          )}
+
+          {/* 목록: 종류별 묶음. 길어지면 이 안에서만 스크롤 */}
+          <div className="discover-scroll">
+            {found.length === 0 && <p className="discover-empty">이 리전에 불러올 리소스가 없습니다.</p>}
+            {found.length > 0 && visibleGroups.length === 0 && (
+              <p className="discover-empty">“{query}”와 일치하는 리소스가 없습니다.</p>
+            )}
+            {visibleGroups.map(({ kind, items }) => {
+              const selectable = items.filter(({ r }) => r.typeKey).map(({ i }) => i);
+              const pickedInGroup = selectable.filter((i) => picked.has(i)).length;
+              const all = selectable.length > 0 && pickedInGroup === selectable.length;
+              return (
+                <div key={kind} className="discover-group">
+                  <label className="discover-group-head">
+                    <input
+                      type="checkbox"
+                      disabled={selectable.length === 0}
+                      checked={all}
+                      ref={(el) => {
+                        if (el) el.indeterminate = pickedInGroup > 0 && !all;
+                      }}
+                      onChange={() => toggleGroup(selectable, !all)}
+                    />
+                    <span className="discover-group-name">{KIND_LABEL[kind]}</span>
+                    <span className="discover-group-count">{items.length}</span>
+                  </label>
+                  <ul className="discover-list">
+                    {items.map(({ r, i }) => {
+                      const on = picked.has(i);
+                      return (
+                        <li key={i}>
+                          <label
+                            className={`discover-row ${on ? 'on' : ''} ${r.typeKey ? '' : 'unsupported'}`}
+                            title={r.unsupported ?? r.resourceId}
+                          >
+                            <input
+                              type="checkbox"
+                              disabled={!r.typeKey}
+                              checked={on}
+                              onChange={() => toggle(i)}
+                            />
+                            <span className="discover-main">
+                              <span className="discover-label">{r.label}</span>
+                              {/* Lambda·RDS 처럼 이름과 ID가 같으면 같은 글자를 두 번 쓰지 않는다 */}
+                              {r.resourceId !== r.label && (
+                                <code className="discover-id">{r.resourceId}</code>
+                              )}
+                            </span>
+                            <span className="discover-chips">
+                              {r.meta.map((m) => (
+                                <span key={m} className="d-chip">
+                                  {m}
+                                </span>
+                              ))}
+                              {r.state && (
+                                <span className={`d-chip state-${r.state === 'running' ? 'ok' : r.state === 'stopped' ? 'off' : 'warn'}`}>
+                                  {r.state}
+                                </span>
+                              )}
+                              {r.unsupported && <span className="d-chip state-warn">미지원</span>}
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="discover-footer">
+            <span className="hint" style={{ margin: 0 }}>
+              선택한 리소스마다 기본 지표가 켜진 카드가 만들어집니다.
+            </span>
+            <button className="btn btn-primary" disabled={picked.size === 0} onClick={createCards}>
+              {picked.size > 0 ? `선택한 ${picked.size}개로 카드 생성` : '리소스를 선택하세요'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {accountError && <p className="inline-error">{accountError}</p>}
+    </section>
+
     <section className="panel">
       <div className="panel-head">
         <div className="header-title">
@@ -356,104 +586,8 @@ export function AiPanel({
         </div>
       )}
 
-      {/* 2) 선택: 계정 연결 (항상 표시). runbook 클래스로 구분선 — needsLogin 여부와 무관하게 노출 */}
-      <div className="runbook">
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>계정 연결 (선택)</div>
-        <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>
-          계정을 연결하면 리소스를 읽어 더 정확히 추천합니다. 
-        </p>
-
-        {/* 계정 ID 입력 + 확인 버튼을 한 줄에 */}
-        <label className="field" style={{ marginBottom: 0 }}>
-          <span>계정 ID (12자리 숫자)</span>
-          <div className="account-row">
-            <input
-              value={accountId}
-              placeholder=" 055251234567"
-              inputMode="numeric"
-              onChange={(e) => editAccount(e.target.value)}
-            />
-            <button
-              className={`btn ${validated ? 'btn-done' : 'btn-primary'}`}
-              onClick={validateRole}
-              disabled={!accountIdComplete || validating || validated || needsLogin}
-            >
-              {validating ? '확인 중…' : validated ? '확인됨 ✓' : '계정 확인'}
-            </button>
-          </div>
-        </label>
-
-        {/* 연결 상태: 어느 계정을 · 어느 리전으로 읽었는지 한눈에 */}
-        {validated && (
-          <div className="account-status">
-            <span className="account-status-main">
-              <span className="account-status-dot" aria-hidden="true" />
-              연결됨
-              <strong>{validatedAccount}</strong>
-              {validatedAlias && <span className="account-status-alias">({validatedAlias})</span>}
-              <span className="badge">{global.region}</span>
-            </span>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={refreshResources}
-              disabled={refreshing}
-              title="현재 리전 기준으로 이 계정 리소스를 다시 불러옵니다"
-            >
-              {refreshing ? '새로고침 중…' : '↻ 새로고침'}
-            </button>
-          </div>
-        )}
-
-        {found && (
-          <div style={{ marginTop: 12 }}>
-            {/* 목록 툴바: 개수 요약(왼쪽) + 선택 버튼(오른쪽) */}
-            <div className="list-toolbar">
-              <span className="list-toolbar-count">
-                리소스 <strong>{found.length}</strong>개 · 지원 <strong>{selectableCount}</strong>개 ·
-                선택 <strong>{picked.size}</strong>개
-              </span>
-              <span className="row-gap">
-                <button
-                  className="btn btn-ghost btn-sm"
-                  disabled={selectableCount === 0}
-                  onClick={selectAll}
-                >
-                  전체 선택
-                </button>
-                <button className="btn btn-ghost btn-sm" disabled={picked.size === 0} onClick={clearAll}>
-                  전체 해제
-                </button>
-              </span>
-            </div>
-            <ul className="discover-list">
-              {found.map((r, i) => (
-                <li key={i} className={`discover-row ${r.typeKey ? '' : 'unsupported'}`}>
-                  <label className="checkline">
-                    <input
-                      type="checkbox"
-                      disabled={!r.typeKey}
-                      checked={picked.has(i)}
-                      onChange={() => toggle(i)}
-                    />
-                    <span className="discover-label">{r.label}</span>
-                  </label>
-                  <code className="discover-id">{r.resourceId}</code>
-                  <span className="discover-detail">
-                    {r.unsupported ? `${r.detail} · ${r.unsupported}` : r.detail}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="actions">
-              <button className="btn btn-primary" disabled={picked.size === 0} onClick={createCards}>
-                선택한 리소스로 카드 생성
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
       {error && <p className="inline-error">{error}</p>}
     </section>
+    </>
   );
 }

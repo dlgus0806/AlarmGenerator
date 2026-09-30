@@ -222,9 +222,23 @@ export function validate(
   // ---- 알람별 검증 ----
   const seen = new Map<string, number>();
 
+  const hasGlobalTopics = nonEmpty.length > 0;
+
   for (const spec of specs) {
     const n = spec.alarmName;
     seen.set(n, (seen.get(n) ?? 0) + 1);
+
+    // 지표별 SNS 라우팅에서 토픽을 하나도 고르지 않은 경우.
+    // (전역 토픽 자체가 없으면 위의 전역 SNS 오류가 이미 안내한다)
+    if (hasGlobalTopics && spec.snsTopicArns.length === 0) {
+      add({
+        level: 'error',
+        category: 'sns',
+        alarmName: n,
+        message: '알림을 보낼 SNS 토픽이 선택되지 않았습니다.',
+        fix: '추가 구성의 "알림 보낼 SNS 토픽"에서 하나 이상 선택하세요. 알람은 생겨도 알림이 가지 않습니다.',
+      });
+    }
 
     if (n.length > MAX_ALARM_NAME_LENGTH) {
       add({

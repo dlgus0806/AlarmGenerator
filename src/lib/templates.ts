@@ -35,7 +35,8 @@ export function toTemplate(name: string, resources: ResourceEntry[]): AlarmTempl
       .filter((r) => r.selected.length > 0 || (r.customMetrics ?? []).length > 0)
       .map((r) => ({
         typeKey: r.typeKey,
-        selected: structuredClone(r.selected),
+        // SNS 토픽 ARN은 계정마다 달라 표준에 넣지 않는다(적용하면 전역 토픽 전부로 보냄).
+        selected: structuredClone(r.selected).map(({ snsTopics: _drop, ...rest }) => rest),
         customMetrics: r.customMetrics ? structuredClone(r.customMetrics) : undefined,
       })),
   };
@@ -49,6 +50,7 @@ export const RDS_ENGINE_CHOICES = [
   'rds-mysql',
   'rds-mariadb',
   'rds-oracle',
+  'rds-sqlserver',
 ];
 
 /** choose 슬롯이 하나라도 있는지 */

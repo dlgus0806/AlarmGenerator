@@ -211,8 +211,10 @@ export default function App() {
                 <span className="user-chip-name" title={auth.identity?.email}>
                   {auth.identity?.name || auth.identity?.email || '로그인됨'}
                 </span>
-                <span className="user-chip-sep" aria-hidden="true">|</span>
-                <button className="user-chip-logout" onClick={() => void auth.logout()}>
+                <button
+                  className="btn btn-primary btn-sm user-chip-logout"
+                  onClick={() => void auth.logout()}
+                >
                   로그아웃
                 </button>
               </span>
@@ -279,7 +281,9 @@ export default function App() {
             </button>
           </div>
 
-          {method === 'ai' && (
+          {/* AI 패널은 탭을 옮겨도 언마운트하지 않는다(숨김만). 계정 연결·불러온 목록·AI 결과를 유지해
+              다른 탭에서 돌아와도 재조회하지 않는다. 재조회는 "계정 확인"/"새로고침"에서만. */}
+          <div className="keep-alive" hidden={method !== 'ai'}>
             <AiPanel
               global={global}
               onApply={handleIntake}
@@ -298,7 +302,7 @@ export default function App() {
                 scrollToResources();
               }}
             />
-          )}
+          </div>
 
           {method === 'template' && (
             <TemplatePanel resources={resources} onApply={handleApplyTemplate} />

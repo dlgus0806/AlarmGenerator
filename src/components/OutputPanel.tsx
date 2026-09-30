@@ -4,7 +4,8 @@ import { generatePreflight } from '../lib/generatePreflight';
 import { buildProjectFile, copyToClipboard, downloadText } from '../lib/io';
 import { scanCreationViolations, scanForbidden } from '../lib/safety';
 
-type Tab = 'cli' | 'preflight' | 'json';
+type Tab = 'ai' | 'preflight' | 'cli' | 'json';
+type FileTab = Exclude<Tab, 'ai'>;
 
 interface Props {
   global: GlobalConfig;
@@ -84,7 +85,7 @@ export function OutputPanel({
   authRequired = false,
 }: Props) {
   const needsLogin = authRequired && !authenticated;
-  const [tab, setTab] = useState<Tab>('preflight');
+  const [tab, setTab] = useState<Tab>('ai');
   const [copied, setCopied] = useState('');
   const [nonce, setNonce] = useState(0); // 새로고침 시 파생 산출물 재계산 트리거
 
@@ -169,7 +170,7 @@ export function OutputPanel({
 
   // 적용(AI/템플릿/카드 생성)이 일어나면 점검 탭으로 전환한다.
   useEffect(() => {
-    if (applyNonce && applyNonce > 0) setTab('preflight');
+    if (applyNonce && applyNonce > 0) setTab('ai');
   }, [applyNonce]);
 
   // 알람 구성·계정이 바뀌어도 이전 결과는 지우지 않는다. 대신 "이전 기준" 으로 표시하고,
@@ -195,10 +196,12 @@ export function OutputPanel({
 
   const blocked = hasError || specs.length === 0 || violations.length > 0;
 
-  const body = tab === 'cli' ? script : tab === 'preflight' ? preflight : projectJson;
+  // 파일 산출물 탭(점검 스크립트·CLI·JSON). AI 점검 탭은 파일이 없다.
+  const fileTab: FileTab | null = tab === 'ai' ? null : tab;
+  const body = fileTab === 'cli' ? script : fileTab === 'preflight' ? preflight : projectJson;
 
   const slug = global.prefix.trim() || 'alarms';
-  const dl = {
+  const files: Record<FileTab, { file: string; mime: string; label: string; disabled: boolean }> = {
     cli: { file: `${slug}-alarms.sh`, mime: 'text/x-shellscript', label: 'CLI', disabled: blocked },
     preflight: {
       file: `${slug}-check.sh`,
@@ -212,7 +215,8 @@ export function OutputPanel({
       label: 'JSON',
       disabled: specs.length === 0,
     },
-  }[tab];
+  };
+  const dl = fileTab ? files[fileTab] : null;
 
   async function copy(label: string, text: string) {
     const ok = await copyToClipboard(text);
@@ -224,6 +228,10 @@ export function OutputPanel({
     <section className="panel output">
       <div className="panel-head">
         <div className="tabs">
+          <button className={tab === 'ai' ? 'tab tab-on' : 'tab'} onClick={() => setTab('ai')}>
+            AI 점검
+            {aiStale && <span className="tab-dot" title="점검 후 구성이 바뀌었습니다" />}
+          </button>
           <button
             className={tab === 'preflight' ? 'tab tab-on' : 'tab'}
             onClick={() => setTab('preflight')}
@@ -242,31 +250,35 @@ export function OutputPanel({
           <button className="btn btn-ghost" onClick={refresh}>
             새로고침
           </button>
-          <button
-            className="btn btn-ghost"
-            disabled={dl.disabled}
-            onClick={() =>
-              copy(
-                `${dl.label} 복사됨`,
-                // CLI·사전점검은 bash로 파이프하는 형태로 복사 → 붙여넣어도 명령이 되비치지
-                // 않고 결과만 출력된다. JSON은 그대로.
-                tab === 'json' ? body : `bash <<'CWALARM_EOF'\n${body}\nCWALARM_EOF\n`,
-              )
-            }
-          >
-            복사
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={dl.disabled}
-            onClick={() => downloadText(dl.file, body, dl.mime)}
-          >
-            다운로드
-          </button>
+          {dl && (
+            <>
+              <button
+                className="btn btn-ghost"
+                disabled={dl.disabled}
+                onClick={() =>
+                  copy(
+                    `${dl.label} 복사됨`,
+                    // CLI·사전점검은 bash로 파이프하는 형태로 복사 → 붙여넣어도 명령이 되비치지
+                    // 않고 결과만 출력된다. JSON은 그대로.
+                    fileTab === 'json' ? body : `bash <<'CWALARM_EOF'\n${body}\nCWALARM_EOF\n`,
+                  )
+                }
+              >
+                복사
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={dl.disabled}
+                onClick={() => downloadText(dl.file, body, dl.mime)}
+              >
+                다운로드
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {tab === 'preflight' && (
+      {tab === 'ai' && (
         <div className="ai-preflight-card">
           <div className="ai-preflight-head">
             <div className="ai-preflight-title">
@@ -318,57 +330,7 @@ export function OutputPanel({
                   </button>
                 </div>
               )}
-              {aiResult.mode === 'account' && aiResult.summary && aiResult.rows ? (
-                <>
-                  <div className="row-gap" style={{ flexWrap: 'wrap', margin: '10px 0 8px' }}>
-                    <span className="audit-chip ok">신규 {aiResult.summary.create}</span>
-                    <span className="audit-chip">덮어쓰기 {aiResult.summary.update}</span>
-                    {aiResult.summary.thresholdChanged > 0 && (
-                      <span className="audit-chip warn">
-                        임계값 변경 {aiResult.summary.thresholdChanged}
-                      </span>
-                    )}
-                    {aiResult.summary.missing > 0 && (
-                      <span className="audit-chip err">데이터 없음 {aiResult.summary.missing}</span>
-                    )}
-                  </div>
-                  <table className="preflight-table">
-                    <thead>
-                      <tr>
-                        <th>알람</th>
-                        <th>지표</th>
-                        <th>상태</th>
-                        <th>비고</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {aiResult.rows.map((r, i) => (
-                        <tr key={i}>
-                          <td className="mono">{r.name}</td>
-                          <td>{r.metric}</td>
-                          <td>{r.status === 'new' ? '✔️ 신규' : '♻️ 덮어쓰기'}</td>
-                          <td>
-                            {r.metricMissing
-                              ? '⚠️ 데이터 없음(아직 미수집)'
-                              : r.metricUnknown
-                                ? '지표 확인 불가'
-                                : r.thresholdChanged
-                                  ? `임계값 ${r.existingThreshold}→${r.newThreshold}`
-                                  : r.status === 'new'
-                                    ? '지표 존재'
-                                    : '동일 갱신'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              ) : (
-                <p className="hint" style={{ margin: '10px 0 0' }}>
-                  계정 미연결 상태라 정의·설정만 검토했습니다. 기존 알람·데이터 지표 대조는{' '}
-                  <strong>AI 어시스턴트에서 계정을 검증</strong>하면 함께 확인됩니다.
-                </p>
-              )}
+              {/* 결론·판단 근거를 표보다 먼저 */}
               {aiResult.judgment &&
                 (() => {
                   const j = splitJudgment(aiResult.judgment);
@@ -390,6 +352,103 @@ export function OutputPanel({
                     </>
                   );
                 })()}
+              {aiResult.mode === 'account' && aiResult.summary && aiResult.rows ? (
+                <>
+                  <div className="row-gap" style={{ flexWrap: 'wrap', margin: '10px 0 8px' }}>
+                    <span className="audit-chip ok">신규 {aiResult.summary.create}</span>
+                    <span className="audit-chip">덮어쓰기 {aiResult.summary.update}</span>
+                    {aiResult.summary.thresholdChanged > 0 && (
+                      <span className="audit-chip warn">
+                        임계값 변경 {aiResult.summary.thresholdChanged}
+                      </span>
+                    )}
+                    {aiResult.summary.missing > 0 && (
+                      <span className="audit-chip err">데이터 없음 {aiResult.summary.missing}</span>
+                    )}
+                  </div>
+                  <div className="preflight-table-wrap">
+                    <table className="preflight-table">
+                      <colgroup>
+                        <col className="pt-col-name" />
+                        <col className="pt-col-metric" />
+                        <col className="pt-col-status" />
+                        <col className="pt-col-note" />
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th>알람 이름</th>
+                          <th>지표</th>
+                          <th>상태</th>
+                          <th>비고</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiResult.rows.map((r, i) => {
+                          // "AWS/EC2 / CPUUtilization" → 네임스페이스(위, 흐리게) + 지표 이름(아래)
+                          const cut = r.metric.lastIndexOf(' / ');
+                          const ns = cut >= 0 ? r.metric.slice(0, cut) : '';
+                          const metric = cut >= 0 ? r.metric.slice(cut + 3) : r.metric;
+                          const note = r.metricMissing
+                            ? { cls: 'err', text: '데이터 없음', title: '아직 수집된 데이터가 없습니다' }
+                            : r.metricUnknown
+                              ? { cls: 'muted', text: '확인 불가', title: '지표 존재 여부를 조회하지 못했습니다' }
+                              : r.thresholdChanged
+                                ? {
+                                    cls: 'warn',
+                                    text: `임계값 ${r.existingThreshold} → ${r.newThreshold}`,
+                                    title: '기존 알람의 임계값이 바뀝니다',
+                                  }
+                                : r.status === 'new'
+                                  ? { cls: 'ok', text: '지표 있음', title: '' }
+                                  : { cls: 'muted', text: '동일 갱신', title: '' };
+                          return (
+                            <tr key={i}>
+                              <td className="pt-name">
+                                {/* 하이픈 뒤에서만 줄바꿈되게 해 단어가 중간에서 끊기지 않게 한다 */}
+                                {r.name.split('-').map((part, j, arr) => (
+                                  <span key={j}>
+                                    {part}
+                                    {j < arr.length - 1 && (
+                                      <>
+                                        -<wbr />
+                                      </>
+                                    )}
+                                  </span>
+                                ))}
+                              </td>
+                              <td className="pt-metric">
+                                {ns && <span className="pt-ns">{ns}</span>}
+                                <span className="pt-metric-name">{metric}</span>
+                              </td>
+                              <td>
+                                <span className={`pt-chip ${r.status === 'new' ? 'ok' : 'warn'}`}>
+                                  {r.status === 'new' ? '신규' : '덮어쓰기'}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`pt-chip ${note.cls}`} title={note.title || undefined}>
+                                  {note.text}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {aiResult.summary.missing > 0 && (
+                    <p className="hint" style={{ margin: '6px 0 0' }}>
+                      “데이터 없음”은 지표 이름이 틀렸다는 뜻이 아니라 아직 수집된 데이터가 없다는 뜻일 수
+                      있습니다. 생성 후 한동안 INSUFFICIENT_DATA로 보일 수 있습니다.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="hint" style={{ margin: '10px 0 0' }}>
+                  계정 미연결 상태라 정의·설정만 검토했습니다. 기존 알람·데이터 지표 대조는{' '}
+                  <strong>AI 어시스턴트에서 계정을 검증</strong>하면 함께 확인됩니다.
+                </p>
+              )}
             </>
           ) : (
             <p className="hint" style={{ margin: '8px 0 0' }}>
@@ -410,25 +469,26 @@ export function OutputPanel({
 
       {tab === 'preflight' && (
         <p className="hint" style={{ margin: '0 0 6px' }}>
-          <br />아래는 읽기 전용 <strong>점검 스크립트</strong>입니다. CloudShell에서 실행하면 이미 존재하는
-          알람과 데이터 없는 지표를 직접 확인할 수 있습니다.
+          읽기 전용 <strong>점검 스크립트</strong>입니다. CloudShell에서 실행하면 이미 존재하는 알람과 데이터
+          없는 지표를 직접 확인할 수 있습니다.
         </p>
       )}
 
-      <pre className="code">{body}</pre>
+      {fileTab && <pre className="code">{body}</pre>}
 
-      {violations.length > 0 && (
+      {fileTab && violations.length > 0 && (
         <p className="inline-error">
           ⛔ 안전 가드: 산출물에 허용되지 않은 명령이 감지되어 다운로드·복사를 차단했습니다 —{' '}
           {violations.join(', ')}. 이 도구는 알람 생성(put-metric-alarm)만 산출해야 합니다.
         </p>
       )}
-      {hasError && violations.length === 0 && (
+      {fileTab && hasError && violations.length === 0 && (
         <p className="inline-error">
           사전 검증 오류를 먼저 해결하세요. CLI 다운로드와 복사가 잠겨 있습니다.
         </p>
       )}
 
+      {fileTab && (
       <details className="runbook">
         <summary>CloudShell 실행 순서</summary>
         <ol>
@@ -472,6 +532,7 @@ export function OutputPanel({
           </li>
         </ol>
       </details>
+      )}
     </section>
   );
 }

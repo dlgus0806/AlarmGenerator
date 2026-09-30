@@ -20,7 +20,10 @@ const GIB = 1024 ** 3;
 function normalizeResourceId(id: string): string {
   const marker = 'loadbalancer/';
   const i = id.indexOf(marker);
-  return i >= 0 ? id.slice(i + marker.length) : id;
+  if (i >= 0) return id.slice(i + marker.length);
+  // 대상 그룹 ARN(arn:…:targetgroup/이름/해시) → TargetGroup 디멘션 값(targetgroup/이름/해시)
+  const tg = id.indexOf(':targetgroup/');
+  return tg >= 0 ? id.slice(tg + 1) : id;
 }
 
 /** 사용자가 보는 단위 -> CloudWatch API가 받는 값 */
@@ -104,10 +107,19 @@ export function isAnomalyOperator(op: string): boolean {
 }
 
 export const MISSING_DATA_OPTIONS = [
-  { value: 'missing', label: '누락된 데이터를 누락(으)로 처리' },
-  { value: 'notBreaching', label: '누락된 데이터를 양호(임계값 위반 안 함)(으)로 처리' },
-  { value: 'ignore', label: '누락된 데이터를 무시(경보 상태 유지)(으)로 처리' },
-  { value: 'breaching', label: '누락된 데이터를 불량(임계값 위반)(으)로 처리' },
+  // label 은 드롭다운에 들어가므로 짧게, 뜻은 desc 로 선택칸 아래에 보여준다.
+  { value: 'missing', label: '누락 (missing)', desc: '데이터가 없으면 판단을 보류합니다.' },
+  {
+    value: 'notBreaching',
+    label: '양호 (notBreaching)',
+    desc: '데이터가 없으면 정상으로 봅니다. 트래픽이 없을 때 비는 카운트 지표에 씁니다.',
+  },
+  { value: 'ignore', label: '상태 유지 (ignore)', desc: '데이터가 없으면 현재 알람 상태를 그대로 둡니다.' },
+  {
+    value: 'breaching',
+    label: '위반 (breaching)',
+    desc: '데이터가 없으면 임계값 위반으로 봅니다. 데이터가 끊기는 것 자체가 장애일 때 씁니다.',
+  },
 ];
 
 export const OPERATOR_OPTIONS = [
@@ -116,8 +128,6 @@ export const OPERATOR_OPTIONS = [
   { value: 'LessThanOrEqualToThreshold', label: '<= 이하' },
   { value: 'LessThanThreshold', label: '< 미만' },
 ];
-
-export const SEVERITY_OPTIONS: Severity[] = ['critical', 'warning'];
 
 /** 레벨 지표의 초기 선택값 (모든 레벨 켜짐 + 기본 임계값). 아니면 undefined. */
 export function initLevels(
@@ -140,7 +150,8 @@ export function resolveMetric(preset: MetricPreset, sel: MetricSelection) {
     statistic: preset.extendedStatistic ? undefined : (sel.statistic ?? preset.statistic),
     extendedStatistic: preset.extendedStatistic,
     comparisonOperator: sel.comparisonOperator ?? preset.comparisonOperator,
-    severity: sel.severity ?? preset.severity,
+    // 심각도는 UI/이름에서 쓰지 않는다. 명세 호환용으로 카탈로그 값만 유지한다.
+    severity: preset.severity,
   };
 }
 
@@ -154,7 +165,7 @@ export function hasOverrides(preset: MetricPreset, sel: MetricSelection): boolea
     r.treatMissingData !== preset.treatMissingData ||
     r.statistic !== preset.statistic ||
     r.comparisonOperator !== preset.comparisonOperator ||
-    r.severity !== preset.severity ||
+    sel.snsTopics !== undefined ||
     sel.threshold !== preset.threshold
   );
 }
@@ -220,6 +231,40 @@ function snsTopicsFor(global: GlobalConfig): string[] {
   return out;
 }
 
+/** 알람 이름에 넣도록 표시된(inName) 추가 디멘션 값들을 이어 붙인다. 없으면 ''. */
+export function nameScope(preset: MetricPreset, extraDimValues: Record<string, string>): string {
+  return (preset.extraDimensions ?? [])
+    .filter((d) => d.inName)
+    .map((d) => (extraDimValues[d.name] ?? d.default ?? '').trim())
+    .filter(Boolean)
+    .join('-');
+}
+
+/**
+ * 직접 입력한 알람 이름 앞에 전역 prefix 를 붙인다.
+ * prefix 가 비었거나, 이름이 이미 "prefix-" 로 시작하면(사용자가 직접 적은 경우) 그대로 둔다.
+ */
+export function withPrefix(prefix: string, name: string): string {
+  const p = prefix.trim();
+  if (!p || name === p || name.startsWith(`${p}-`)) return name;
+  return `${p}-${name}`;
+}
+
+/**
+ * 지표별 SNS 라우팅. 선택이 없으면 전역 토픽 전부, 있으면 전역 토픽 중 선택된 것만
+ * (전역 설정 순서 유지, 전역에서 지워진 토픽은 버린다). 빈 배열이면 알림을 보낼 곳이 없다.
+ */
+export function routeTopics(allTopics: string[], selected?: string[]): string[] {
+  if (selected === undefined) return allTopics;
+  const pick = new Set(selected.map((t) => t.trim()));
+  return allTopics.filter((t) => pick.has(t));
+}
+
+/** 전역 설정의 SNS 토픽 목록(정리된 형태). UI 선택지로 쓴다. */
+export function globalTopics(global: GlobalConfig): string[] {
+  return snsTopicsFor(global);
+}
+
 /**
  * 화면 상태(global + resources)에서 알람 명세 목록을 만든다.
  * 순수 함수. 같은 입력이면 항상 같은 출력.
@@ -242,6 +287,8 @@ export function buildAlarms(
       const preset = type.metrics.find((m) => m.key === selection.metricKey);
       if (!preset) continue;
       const r = resolveMetric(preset, selection);
+      // 이 지표 알람이 알림을 보낼 토픽 (단계 알람 Lv1/2/3 모두 같은 토픽)
+      const selTopics = routeTopics(topics, selection.snsTopics);
       const manual = selection.customName.trim();
       const isLevel = Boolean(preset.levels && preset.levels.length > 0);
       // 단계(레벨) 지표라도 이상 탐지를 켜면 단일 밴드 알람 하나로 만든다 (레벨 무시).
@@ -271,16 +318,18 @@ export function buildAlarms(
           shortCode: type.shortCode,
           resourceId,
           metricKey: nameKey,
-          severity,
-          // 이상 탐지는 임계값이 이름에 들어가지 않는다 (심각도 약어를 쓴다).
+          scope: nameScope(preset, selection.extraDimValues),
+          // 이상 탐지는 임계값이 이름에 들어가지 않는다 (metricKey 의 -anomaly 로 구분).
           threshold: anomaly ? undefined : displayThreshold,
           thresholdUnit: anomaly ? undefined : preset.thresholdUnit,
         });
+        // 직접 입력 모드여도 전역 prefix 는 앞에 붙인다 (자동 이름과 같은 규칙).
         const alarmName =
           global.namingMode === 'manual' && manual.length > 0
-            ? levelName
-              ? `${manual}-${levelName.toLowerCase()}`
-              : manual
+            ? withPrefix(
+                global.prefix,
+                levelName ? `${manual}-${levelName.toLowerCase()}` : manual,
+              )
             : autoName;
         const label = levelName ? `${preset.label} ${levelName}` : preset.label;
         const auto = anomaly
@@ -340,7 +389,7 @@ export function buildAlarms(
           anomaly: anomaly || undefined,
           bandWidth: anomaly ? bandWidth : undefined,
           thresholdMetricId: anomaly ? 'ad1' : undefined,
-          snsTopicArns: topics,
+          snsTopicArns: selTopics,
           catalogKey: `${type.key}.${preset.key}${levelName ? '.' + levelName.toLowerCase() : anomaly ? '.anomaly' : ''}`,
           resourceType: type.key,
           resourceId,
@@ -399,7 +448,6 @@ function buildCustomSpec(
       shortCode,
       resourceId,
       metricKey,
-      severity: cm.severity,
     }),
     description: describe({
       label: cm.label || cm.metricName,

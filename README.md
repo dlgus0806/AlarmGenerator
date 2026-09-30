@@ -11,7 +11,8 @@
 
 - **AI 어시스턴트 (Amazon Bedrock · Claude)**
   - 형식 없는 요구사항 텍스트를 알람 JSON으로 변환한다.
-  - 계정을 연결하면(선택) 고객 계정의 EC2·RDS·ALB를 읽기 전용으로 불러와 카드로 만들거나,
+  - 계정을 연결하면(선택) 고객 계정의 EC2·Auto Scaling 그룹·RDS·ALB·대상 그룹·ECS 서비스·Lambda·
+    CloudFront를 읽기 전용으로 불러와 카드로 만들거나,
     실제 리소스와 최근 CPU 지표를 근거로 알람을 추천한다.
 - **표준 템플릿**: 자주 쓰는 알람 묶음을 저장하고 재사용한다. 저장은 브라우저(localStorage)에만 된다.
 - **리소스 선택**: 리소스와 지표를 직접 토글하고 임계값·평가 조건·결측 처리를 조정한다. 커스텀 지표도 추가할 수 있다.
@@ -20,8 +21,9 @@
   신규 / 덮어쓰기 / 데이터 없음을 표로 보여준다.
 - **산출물**: 점검 스크립트(읽기 전용), CLI(알람 생성), JSON(재편집·이력 관리).
 
-지원 리소스: EC2, ALB, Aurora(PostgreSQL·MySQL), RDS(PostgreSQL·MySQL·MariaDB·Oracle), Lambda,
-계정 보안(CloudTrail 지표). 지표 목록은 [`catalog-metrics.md`](./catalog-metrics.md).
+지원 리소스: EC2, Auto Scaling 그룹, ALB, ALB 대상 그룹, ECS 서비스, Lambda, CloudFront,
+Aurora(PostgreSQL·MySQL), RDS(PostgreSQL·MySQL·MariaDB·Oracle·SQL Server), 계정 보안(CloudTrail 지표).
+지표 목록은 [`catalog-metrics.md`](./catalog-metrics.md).
 
 ## 구성
 

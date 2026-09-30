@@ -8,7 +8,12 @@ import rdsPg from './rds-postgresql.json';
 import rdsMysql from './rds-mysql.json';
 import rdsMariadb from './rds-mariadb.json';
 import rdsOracle from './rds-oracle.json';
+import rdsSqlserver from './rds-sqlserver.json';
 import lambda from './lambda.json';
+import asg from './asg.json';
+import ecs from './ecs.json';
+import targetGroup from './target-group.json';
+import cloudfront from './cloudfront.json';
 import accountSecurity from './account-security.json';
 
 /**
@@ -17,14 +22,19 @@ import accountSecurity from './account-security.json';
  */
 export const CATALOG: ResourceType[] = [
   ec2 as ResourceType,
+  asg as ResourceType,
   alb as ResourceType,
+  targetGroup as ResourceType,
+  ecs as ResourceType,
   lambda as ResourceType,
+  cloudfront as ResourceType,
   auroraPg as ResourceType,
   auroraMysql as ResourceType,
   rdsPg as ResourceType,
   rdsMysql as ResourceType,
   rdsMariadb as ResourceType,
   rdsOracle as ResourceType,
+  rdsSqlserver as ResourceType,
   accountSecurity as ResourceType,
 ];
 

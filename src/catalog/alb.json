@@ -6,7 +6,7 @@
   "dimensionName": "LoadBalancer",
   "idPlaceholder": "app/prd-front-alb/50dc6c495c0c9188",
   "idPattern": "^(arn:aws[a-z-]*:elasticloadbalancing:[^:]*:[0-9]+:loadbalancer/)?app/[^/]+/[0-9a-f]+$",
-  "idHint": "LoadBalancer 디멘션 값(app/이름/해시). 전체 ARN을 붙여넣어도 자동으로 이 부분만 사용합니다",
+  "idHint": "LoadBalancer 디멘션 값(app/이름/해시)",
   "metrics": [
     {
       "key": "elb-5xx",

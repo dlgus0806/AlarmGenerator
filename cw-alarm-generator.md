@@ -115,6 +115,20 @@
 | 부분일치 2건 이상 | 경고: 여러 리소스가 일치. 정확한 ID 지정 |
 | 일치하는 리소스 없음 | 경고: 일치하는 리소스를 찾지 못함 |
 
+계정 확인 시 불러오는 리소스와 카드로 만들 때의 규칙:
+
+| 종류 | 조회 API | 카드 규칙 |
+|---|---|---|
+| EC2 · RDS/Aurora · ALB · Lambda | Describe·List | RDS는 엔진별 카탈로그로 매핑. NLB/GLB는 미지원 표시 |
+| Auto Scaling 그룹 | `DescribeAutoScalingGroups` | 그룹 이름을 그대로 디멘션으로 |
+| 대상 그룹 | `DescribeTargetGroups` | ALB에 붙은 것만. LoadBalancer 디멘션을 조회 값으로 미리 채움. LB 미연결·NLB는 미지원 |
+| ECS 서비스 | `ListClusters` + `ListServices` | ClusterName 디멘션을 미리 채움. 클러스터 최대 50개 |
+| CloudFront | `ListDistributions` (us-east-1) | 리전과 무관하게 항상 표시. 알람은 전역 리전이 us-east-1일 때만 만들 수 있음 |
+
+- 종류별 최대 500개(Lambda 1000개)까지 읽는다.
+- Auto Scaling·대상 그룹·ECS·CloudFront 조회가 권한 등으로 실패하면 목록 위에 "일부 조회 실패"로
+  알리고 나머지는 그대로 보여준다.
+
 ### 공통 (적용을 막지 않는 경고)
 
 | 상황 | 결과 |
@@ -129,15 +143,18 @@
 ## 4. 알람 이름 규칙
 
 ```
-{prefix}-{shortCode}-{resourceShort}-{metricKey}-{tail}
+{prefix}-{shortCode}[-{scope}]-{resourceShort}-{metricKey}[-{임계값}]
 ```
 
 - `prefix`: 선택. 소문자·숫자·하이픈 2~33자. 비우면 생략
+- `scope`: 이름에 넣도록 지정한 추가 디멘션 값. 지금은 ECS 클러스터 이름뿐이다
+  (클러스터가 달라도 서비스 이름이 같은 경우가 많아서). 예 `...-ecs-prd-cluster-api-cpu-high-lv1-70`
 - `resourceShort`: EC2·RDS 등은 **ID 전체**를 그대로 쓴다(축약하면 대조 시 혼동). ALB처럼
   `app/<name>/<hash>` 형태는 가운데 이름을 12자로 줄인다
-- `tail`
-  - **% 지표**(CPU·메모리·디스크 등): 단계와 임계값 — 예 `...-cpu-high-lv1-70`
-  - 그 외 지표: 심각도 약어 `crit` / `warn` / `info`
+- `metricKey`: 단계 알람은 `-lv1` 등, 이상 탐지는 `-anomaly`가 붙는다
+- 끝의 임계값: **% 지표**(CPU·메모리·디스크 등)에만 붙는다 — 예 `...-cpu-high-lv1-70`.
+  그 외 지표는 `metricKey`로 끝난다. 심각도는 이름에 넣지 않는다
+  (예전 이름 `...-elb-5xx-crit`은 이제 `...-elb-5xx`. 이름이 달라 기존 알람을 덮어쓰지 않고 새로 생긴다)
 - 허용 문자 `A-Z a-z 0-9 . _ : / -`. `%`·공백·비ASCII는 거부(URL 딥링크·셸 인용 문제). 최대 255자
 
 ### % 지표에 임계값을 넣는 이유와 대가
@@ -168,8 +185,16 @@
 - **리전 고정 지표**: CloudFront·Billing 등은 `us-east-1`에만 있다. 사전 검증이 경고한다.
 - 임계값은 팀 자산이다. 코드에 박지 않고 카탈로그 JSON을 PR로 리뷰한다.
 
-현재 카탈로그: EC2, ALB, Aurora PostgreSQL, Aurora MySQL, RDS PostgreSQL, RDS MySQL, RDS MariaDB,
-RDS Oracle, Lambda, 계정 보안(CloudTrail 지표).
+현재 카탈로그: EC2, Auto Scaling 그룹, ALB, ALB 대상 그룹, ECS 서비스, Lambda, CloudFront,
+Aurora PostgreSQL, Aurora MySQL, RDS PostgreSQL, RDS MySQL, RDS MariaDB, RDS Oracle, RDS SQL Server,
+계정 보안(CloudTrail 지표).
+
+새 카탈로그는 AWS 공식 문서의 권장 알람(Recommended alarms)과 서비스별 지표·디멘션 표를 기준으로 만든다.
+사전 조건이 있는 지표는 배지로 표시한다.
+- Auto Scaling `GroupInServiceInstances`: 그룹 지표 수집을 켜야 데이터가 생긴다.
+- ECS `RunningTaskCount`(`ECS/ContainerInsights`): Container Insights가 필요하다.
+- CloudFront `OriginLatency`: 배포의 추가 지표(유료)를 켜야 한다. CloudFront 알람은 us-east-1에만 만든다.
+- 대상 그룹 지표는 `TargetGroup`과 `LoadBalancer` 디멘션이 모두 필요하다.
 
 ---
 
@@ -185,6 +210,17 @@ RDS Oracle, Lambda, 계정 보안(CloudTrail 지표).
 - `--tags`는 **신규 생성 때만 적용**되고 기존 알람 갱신 때는 에러 없이 무시된다.
   생성 시 태그를 붙이려면 실행자에게 `cloudwatch:TagResource` 권한도 필요하다.
 - 태그는 전역 설정에서 사용자가 넣은 것만 들어간다(자동 주입 태그 없음).
+
+### SNS 라우팅
+
+- SNS 토픽은 전역 설정에 원하는 만큼 넣는다. 심각도별 분리는 없다.
+- 지표마다 "추가 구성 → 알림 보낼 SNS 토픽"에서 그중 일부를 고를 수 있다.
+  고르지 않으면 전역 토픽 전부로 보내고, 나중에 추가한 토픽도 자동으로 포함된다.
+- 단계 지표는 Lv1/2/3 알람이 모두 같은 토픽으로 보낸다.
+- 전역 설정에서 지운 토픽은 선택에서도 빠진다. 선택이 비면 사전 검증 오류로 다운로드가 잠긴다.
+- CLI: 전역 토픽 전부로 보내는 알람은 공통 배열 `SNS_TOPICS`를, 일부만 고른 알람은 ARN을 직접 쓴다.
+- 표준 템플릿에는 토픽 선택을 저장하지 않는다(ARN이 계정마다 다르므로).
+- 심각도는 화면·알람 이름·알림 경로 어디에도 쓰지 않는다.
 
 ---
 

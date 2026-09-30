@@ -1,0 +1,71 @@
+{
+  "key": "asg",
+  "label": "Auto Scaling 그룹",
+  "shortLabel": "ASG",
+  "shortCode": "asg",
+  "dimensionName": "AutoScalingGroupName",
+  "idPlaceholder": "prd-web-asg",
+  "idHint": "Auto Scaling 그룹 이름",
+  "metrics": [
+    {
+      "key": "cpu-high",
+      "label": "그룹 평균 CPU 사용률 높음",
+      "namespace": "AWS/EC2",
+      "metricName": "CPUUtilization",
+      "statistic": "Average",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
+      "comparisonOperator": "GreaterThanOrEqualToThreshold",
+      "threshold": 80,
+      "thresholdUnit": "percent",
+      "treatMissingData": "missing",
+      "severity": "warning",
+      "defaultOn": true,
+      "badges": ["기본", "Lv1/2/3"],
+      "levels": [
+        { "level": "Lv1", "threshold": 70, "severity": "warning" },
+        { "level": "Lv2", "threshold": 80, "severity": "warning" },
+        { "level": "Lv3", "threshold": 90, "severity": "critical" }
+      ],
+      "note": "그룹에 속한 인스턴스 전체의 평균 CPU입니다. EC2 지표의 AutoScalingGroupName 디멘션은 기본 모니터링에서도 제공됩니다."
+    },
+    {
+      "key": "in-service-low",
+      "label": "서비스 중 인스턴스 부족",
+      "namespace": "AWS/AutoScaling",
+      "metricName": "GroupInServiceInstances",
+      "statistic": "Average",
+      "period": 60,
+      "evaluationPeriods": 10,
+      "datapointsToAlarm": 10,
+      "comparisonOperator": "LessThanThreshold",
+      "threshold": 1,
+      "thresholdUnit": "count",
+      "treatMissingData": "missing",
+      "severity": "critical",
+      "defaultOn": false,
+      "badges": ["그룹 지표 수집 필요"],
+      "note": "그룹의 '그룹 지표 수집'을 켜야 데이터가 생깁니다. 임계값은 워크로드에 필요한 최소 인스턴스 수(보통 원하는 용량)로 맞추세요. 기본 1은 서비스 중 인스턴스가 0이 되면 울립니다."
+    },
+    {
+      "key": "status-check",
+      "hidden": true,
+      "label": "그룹 내 상태 검사 실패",
+      "namespace": "AWS/EC2",
+      "metricName": "StatusCheckFailed",
+      "statistic": "Maximum",
+      "period": 60,
+      "evaluationPeriods": 2,
+      "datapointsToAlarm": 2,
+      "comparisonOperator": "GreaterThanOrEqualToThreshold",
+      "threshold": 1,
+      "thresholdUnit": "count",
+      "treatMissingData": "missing",
+      "severity": "critical",
+      "defaultOn": false,
+      "badges": [],
+      "note": "그룹 안 인스턴스 중 하나라도 상태 검사에 실패하면 울립니다."
+    }
+  ]
+}

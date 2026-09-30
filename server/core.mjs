@@ -12,6 +12,7 @@ import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
 import {
   ElasticLoadBalancingV2Client,
   DescribeLoadBalancersCommand,
+  DescribeTargetGroupsCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import {
   CloudWatchClient,
@@ -20,6 +21,10 @@ import {
   ListMetricsCommand,
 } from '@aws-sdk/client-cloudwatch';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
+import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
+import { AutoScalingClient, DescribeAutoScalingGroupsCommand } from '@aws-sdk/client-auto-scaling';
+import { ECSClient, ListClustersCommand, ListServicesCommand } from '@aws-sdk/client-ecs';
+import { CloudFrontClient, ListDistributionsCommand } from '@aws-sdk/client-cloudfront';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 
 // 로컬 설정 파일(gitignore)이 있으면 사용, 없으면 환경변수/기본값.
@@ -205,6 +210,153 @@ async function readAlb(cfg) {
   }));
 }
 
+/** Lambda 함수 목록을 읽는다. 한 번에 50개씩, 최대 1000개까지(목록이 과하게 길어지지 않게). */
+const LAMBDA_MAX_FUNCTIONS = 1000;
+async function readLambda(cfg) {
+  const c = new LambdaClient(cfg);
+  const out = [];
+  let marker;
+  do {
+    const page = await c.send(new ListFunctionsCommand({ Marker: marker, MaxItems: 50 }));
+    for (const f of page.Functions ?? []) {
+      out.push({ Name: f.FunctionName, Runtime: f.Runtime, Memory: f.MemorySize });
+    }
+    marker = page.NextMarker;
+  } while (marker && out.length < LAMBDA_MAX_FUNCTIONS);
+  return out.slice(0, LAMBDA_MAX_FUNCTIONS);
+}
+
+/** 추가 리소스(ASG·대상 그룹·ECS·CloudFront) 종류별 최대 개수. 목록이 과하게 길어지지 않게. */
+const EXTRA_MAX_ITEMS = 500;
+
+/** Auto Scaling 그룹. 디멘션 AutoScalingGroupName. */
+async function readAsg(cfg) {
+  const c = new AutoScalingClient(cfg);
+  const out = [];
+  let token;
+  do {
+    const page = await c.send(new DescribeAutoScalingGroupsCommand({ NextToken: token, MaxRecords: 100 }));
+    for (const g of page.AutoScalingGroups ?? []) {
+      out.push({
+        Name: g.AutoScalingGroupName,
+        Min: g.MinSize,
+        Max: g.MaxSize,
+        Desired: g.DesiredCapacity,
+        Instances: (g.Instances ?? []).length,
+      });
+    }
+    token = page.NextToken;
+  } while (token && out.length < EXTRA_MAX_ITEMS);
+  return out.slice(0, EXTRA_MAX_ITEMS);
+}
+
+/** ELBv2 대상 그룹. 지표 디멘션은 TargetGroup + LoadBalancer(연결된 LB ARN 에서 추출). */
+async function readTargetGroups(cfg) {
+  const c = new ElasticLoadBalancingV2Client(cfg);
+  const out = [];
+  let marker;
+  do {
+    const page = await c.send(new DescribeTargetGroupsCommand({ Marker: marker, PageSize: 400 }));
+    for (const t of page.TargetGroups ?? []) {
+      out.push({
+        Name: t.TargetGroupName,
+        Arn: t.TargetGroupArn,
+        Protocol: t.Protocol,
+        TargetType: t.TargetType,
+        LoadBalancerArns: t.LoadBalancerArns ?? [],
+      });
+    }
+    marker = page.NextMarker;
+  } while (marker && out.length < EXTRA_MAX_ITEMS);
+  return out.slice(0, EXTRA_MAX_ITEMS);
+}
+
+/** ARN 의 마지막 경로 조각 (cluster/이름, service/클러스터/이름 → 이름). */
+function arnTail(arn) {
+  const parts = String(arn).split('/');
+  return parts[parts.length - 1];
+}
+
+/** ECS 서비스. 디멘션 ServiceName + ClusterName. 클러스터 최대 50개. */
+const ECS_MAX_CLUSTERS = 50;
+async function readEcs(cfg) {
+  const c = new ECSClient(cfg);
+  const clusters = [];
+  let token;
+  do {
+    const page = await c.send(new ListClustersCommand({ nextToken: token, maxResults: 100 }));
+    clusters.push(...(page.clusterArns ?? []));
+    token = page.nextToken;
+  } while (token && clusters.length < ECS_MAX_CLUSTERS);
+
+  const out = [];
+  for (const clusterArn of clusters.slice(0, ECS_MAX_CLUSTERS)) {
+    const cluster = arnTail(clusterArn);
+    let next;
+    do {
+      const page = await c.send(
+        new ListServicesCommand({ cluster: clusterArn, nextToken: next, maxResults: 100 }),
+      );
+      for (const s of page.serviceArns ?? []) out.push({ Cluster: cluster, Service: arnTail(s) });
+      next = page.nextToken;
+    } while (next && out.length < EXTRA_MAX_ITEMS);
+    if (out.length >= EXTRA_MAX_ITEMS) break;
+  }
+  return out.slice(0, EXTRA_MAX_ITEMS);
+}
+
+/** CloudFront 배포. 글로벌 서비스라 리전과 무관하게 us-east-1 엔드포인트로 읽는다. */
+async function readCloudFront(cfg) {
+  const c = new CloudFrontClient({ ...cfg, region: 'us-east-1' });
+  const out = [];
+  let marker;
+  do {
+    const page = await c.send(new ListDistributionsCommand({ Marker: marker, MaxItems: 100 }));
+    const list = page.DistributionList;
+    for (const d of list?.Items ?? []) {
+      out.push({
+        Id: d.Id,
+        Domain: d.DomainName,
+        Aliases: d.Aliases?.Items ?? [],
+        Enabled: d.Enabled,
+        Comment: d.Comment,
+      });
+    }
+    marker = list?.IsTruncated ? list.NextMarker : undefined;
+  } while (marker && out.length < EXTRA_MAX_ITEMS);
+  return out.slice(0, EXTRA_MAX_ITEMS);
+}
+
+/**
+ * 조회 실패를 전체 실패로 만들지 않는다. 실패하면 빈 목록 + 경고 한 줄.
+ * (추가 리소스는 고객 계정 read-only 역할에 권한이 없을 수도 있다.)
+ */
+async function tolerant(label, fn, warnings) {
+  try {
+    return await fn();
+  } catch (e) {
+    const code = e?.name || e?.Code || 'Error';
+    warnings.push(`${label}(${code})`);
+    return [];
+  }
+}
+
+/** 대상 계정에서 알람 대상 리소스 전부를 읽는다 (discover · AI 추천 공용). */
+async function readInventory(cfg) {
+  const warnings = [];
+  const [ec2, rds, alb, lambda, asg, targetGroups, ecs, cloudfront] = await Promise.all([
+    readEc2(cfg),
+    readRds(cfg),
+    readAlb(cfg),
+    readLambda(cfg),
+    tolerant('Auto Scaling', () => readAsg(cfg), warnings),
+    tolerant('대상 그룹', () => readTargetGroups(cfg), warnings),
+    tolerant('ECS', () => readEcs(cfg), warnings),
+    tolerant('CloudFront', () => readCloudFront(cfg), warnings),
+  ]);
+  return { ec2, rds, alb, lambda, asg, targetGroups, ecs, cloudfront, warnings };
+}
+
 /**
  * 대상 계정의 IAM 계정 별칭(설정돼 있으면)을 읽는다. read-only 세션으로 조회.
  * client-iam 이 런타임에 없거나(동적 import 실패), 별칭 미설정, 권한 없음 등은
@@ -284,9 +436,9 @@ export async function discover({ roleArn, account, region, accountId, slackToken
     accountId,
     slackToken,
   });
-  const [ec2, rds, alb] = await Promise.all([readEc2(cfg), readRds(cfg), readAlb(cfg)]);
+  const inventory = await readInventory(cfg);
   const alias = await readAccountAlias(cfg);
-  return { account: targetAccount, alias, region, callerArn: caller.Arn, ec2, rds, alb };
+  return { account: targetAccount, alias, region, callerArn: caller.Arn, ...inventory };
 }
 
 /** 실행 중인 EC2의 최근 CPU(기본 3일, 1시간 간격) 평균·최대를 읽는다. 최대 10대. */
@@ -405,10 +557,9 @@ const AI_SYSTEM_PROMPT = `당신은 AWS CloudWatch 알람을 조언하는 시니
 export async function aiAdvise({ question, roleArn, account, region, catalog, accountId, slackToken }) {
   if (!question || !question.trim()) throw fail(400, '질문(q)이 비어 있습니다.');
   const { cfg } = await resolveTarget({ roleArn, account, region, accountId, slackToken });
-  const [ec2, rds, alb] = await Promise.all([readEc2(cfg), readRds(cfg), readAlb(cfg)]);
+  const inventory = await readInventory(cfg);
+  const { ec2 } = inventory;
   const cpu = await readRecentCpu(cfg, ec2, region);
-
-  const inventory = { ec2, rds, alb };
   const cpuText =
     cpu.length === 0
       ? '(실행 중인 EC2 없음 또는 CPU 데이터 없음)'
