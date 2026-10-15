@@ -23,7 +23,16 @@ export interface DiscoveredResource {
   extraDims?: Record<string, string>;
 }
 
-export type DiscoveredKind = 'EC2' | 'ASG' | 'ELB' | 'TG' | 'ECS' | 'Lambda' | 'CloudFront' | 'RDS';
+export type DiscoveredKind =
+  | 'EC2'
+  | 'ASG'
+  | 'ELB'
+  | 'TG'
+  | 'ECS'
+  | 'Lambda'
+  | 'CloudFront'
+  | 'Route53HealthCheck'
+  | 'RDS';
 
 /** RDS 엔진 문자열 -> 카탈로그 타입 키 */
 function mapRdsEngine(engine: string): { typeKey: string | null; reason?: string } {
@@ -63,6 +72,16 @@ interface RawDiscovery {
     LoadBalancerArns?: string[];
   }[];
   cloudfront?: { Id: string; Domain?: string; Aliases?: string[]; Enabled?: boolean; Comment?: string }[];
+  route53HealthChecks?: {
+    Id: string;
+    Type?: string;
+    FQDN?: string;
+    IPAddress?: string;
+    Port?: number;
+    ResourcePath?: string;
+    Disabled?: boolean;
+    MeasureLatency?: boolean;
+  }[];
 }
 
 /** ELB ARN 에서 CloudWatch 디멘션 값(app/…, net/…, targetgroup/…) 을 뽑는다. */
@@ -194,6 +213,26 @@ export function parseDiscovery(raw: string): DiscoveredResource[] {
       meta: [d.Enabled === false ? '비활성' : undefined, 'us-east-1 알람'].filter(
         (v): v is string => Boolean(v),
       ),
+    });
+  }
+
+  for (const h of parsed.route53HealthChecks ?? []) {
+    // CloudWatch 기본 디멘션은 HealthCheckId. endpoint는 표시용이며 ID를 대체하지 않는다.
+    const endpoint = h.FQDN || h.IPAddress;
+    const port = h.Port != null ? `:${h.Port}` : '';
+    const path = h.ResourcePath && h.ResourcePath !== '/' ? h.ResourcePath : '';
+    out.push({
+      typeKey: 'route53-health-check',
+      resourceId: h.Id,
+      label: endpoint ? `${endpoint}${port}${path}` : h.Id,
+      detail: `Route 53 Health Check · ${h.Type ?? '?'}`,
+      kind: 'Route53HealthCheck',
+      meta: [
+        h.Type,
+        h.Disabled ? '비활성' : undefined,
+        h.MeasureLatency ? '지연 측정' : undefined,
+        'us-east-1 알람',
+      ].filter((v): v is string => Boolean(v)),
     });
   }
 

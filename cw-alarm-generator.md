@@ -8,8 +8,8 @@
 
 사용법과 실행 방법은 `README.md`, 배포·운영은 `deploy/README.md`를 본다.
 
-- 문서 버전: v0.4
-- 갱신일: 2026-09-30
+- 문서 버전: v0.5
+- 갱신일: 2026-10-15
 
 ---
 
@@ -77,7 +77,8 @@
 
 1. **전역 설정** — 리전, SNS 토픽(필수). prefix·태그·이름 방식(선택)
 2. **알람 구성** — 셋 중 하나
-   - AI 어시스턴트: 요구사항 텍스트 → 알람 JSON. 계정을 연결하면 실제 리소스로 카드 생성·추천
+   - AI 어시스턴트: 요구사항 텍스트 → 알람 JSON. 계정을 연결하면 실제 리소스로 카드 적용·추천
+     (계정 목록에서 선택한 카드를 적용하면 기존 카드 전체를 교체)
    - 표준 템플릿: 저장된 알람 묶음 적용
    - 리소스 선택: 리소스·지표를 직접 토글
 3. **검증** — 결정론적 사전 검증(즉시) → AI 점검(버튼)
@@ -124,10 +125,11 @@
 | 대상 그룹 | `DescribeTargetGroups` | ALB에 붙은 것만. LoadBalancer 디멘션을 조회 값으로 미리 채움. LB 미연결·NLB는 미지원 |
 | ECS 서비스 | `ListClusters` + `ListServices` | ClusterName 디멘션을 미리 채움. 클러스터 최대 50개 |
 | CloudFront | `ListDistributions` (us-east-1) | 리전과 무관하게 항상 표시. 알람은 전역 리전이 us-east-1일 때만 만들 수 있음 |
+| Route 53 Health Check | `ListHealthChecks` (us-east-1) | endpoint는 표시용, 실제 디멘션은 HealthCheckId. 알람은 us-east-1에서만 생성 |
 
 - 종류별 최대 500개(Lambda 1000개)까지 읽는다.
-- Auto Scaling·대상 그룹·ECS·CloudFront 조회가 권한 등으로 실패하면 목록 위에 "일부 조회 실패"로
-  알리고 나머지는 그대로 보여준다.
+- Auto Scaling·대상 그룹·ECS·CloudFront·Route 53 Health Check 조회가 권한 등으로 실패하면 목록 위에
+  "일부 조회 실패"로 알리고 나머지는 그대로 보여준다.
 
 ### 공통 (적용을 막지 않는 경고)
 
@@ -182,18 +184,20 @@
 - **인스턴스 의존 임계값**(메모리·스토리지·연결 수)은 표시해 두고, 기본값을 그대로 쓰지 않게 안내한다.
 - **카운트 지표**(5xx, 오류 수 등)는 트래픽이 없으면 데이터가 없으므로 `notBreaching`을 쓴다.
   `breaching`이면 야간에 오탐이 쏟아진다.
-- **리전 고정 지표**: CloudFront·Billing 등은 `us-east-1`에만 있다. 사전 검증이 경고한다.
+- **리전 고정 지표**: CloudFront·Route 53 Health Check·Billing 등은 `us-east-1`에만 있다. 사전 검증이 오류로 막는다.
 - 임계값은 팀 자산이다. 코드에 박지 않고 카탈로그 JSON을 PR로 리뷰한다.
 
 현재 카탈로그: EC2, Auto Scaling 그룹, ALB, ALB 대상 그룹, ECS 서비스, Lambda, CloudFront,
-Aurora PostgreSQL, Aurora MySQL, RDS PostgreSQL, RDS MySQL, RDS MariaDB, RDS Oracle, RDS SQL Server,
-계정 보안(CloudTrail 지표).
+Route 53 Health Check, Aurora PostgreSQL, Aurora MySQL, RDS PostgreSQL, RDS MySQL, RDS MariaDB,
+RDS Oracle, RDS SQL Server, 계정 보안(CloudTrail 지표).
 
 새 카탈로그는 AWS 공식 문서의 권장 알람(Recommended alarms)과 서비스별 지표·디멘션 표를 기준으로 만든다.
 사전 조건이 있는 지표는 배지로 표시한다.
 - Auto Scaling `GroupInServiceInstances`: 그룹 지표 수집을 켜야 데이터가 생긴다.
 - ECS `RunningTaskCount`(`ECS/ContainerInsights`): Container Insights가 필요하다.
 - CloudFront `OriginLatency`: 배포의 추가 지표(유료)를 켜야 한다. CloudFront 알람은 us-east-1에만 만든다.
+- Route 53 Health Check 지표는 `HealthCheckId` 디멘션을 쓰며 알람은 us-east-1에만 만든다.
+  `ConnectionTime`·`SSLHandshakeTime`·`TimeToFirstByte`는 Health Check의 지연 시간 측정을 켜야 한다.
 - 대상 그룹 지표는 `TargetGroup`과 `LoadBalancer` 디멘션이 모두 필요하다.
 
 ---

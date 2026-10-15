@@ -25,7 +25,7 @@ function envCfg() {
     teamId: process.env.SLACK_TEAM_ID ?? 'T192GUYE7',
     emailDomain: (process.env.ALLOWED_EMAIL_DOMAIN ?? 'saltware.co.kr').replace(/^@/, ''),
     sessionSecret: process.env.SESSION_SECRET ?? '',
-    sessionTtlSec: Number(process.env.SESSION_TTL_SEC ?? 21600), // 6h (ADMIN.md 로그인 세션 수명)
+    sessionTtlSec: Number(process.env.SESSION_TTL_SEC ?? 21600), // 기본 로그인 세션 수명 6시간
   };
 }
 

@@ -3,7 +3,7 @@
 > 이 문서는 `src/catalog/*.json` 에서 자동 생성됩니다. **직접 고치지 마세요.**
 > 지표를 추가/수정하려면 아래 "파일 위치"의 JSON을 편집하고 `npm run docs`로 이 문서를 다시 생성하세요.
 
-생성 시각: 2026-09-30T06:42:41.038Z
+생성 시각: 2026-10-15T07:48:27.440Z
 
 ## 파일 위치
 
@@ -16,6 +16,7 @@
 | ECS 서비스 | `src/catalog/ecs.json` |
 | Lambda 함수 | `src/catalog/lambda.json` |
 | CloudFront 배포 | `src/catalog/cloudfront.json` |
+| Route 53 Health Check | `src/catalog/route53-health-check.json` |
 | Aurora PostgreSQL | `src/catalog/aurora-postgresql.json` |
 | Aurora MySQL | `src/catalog/aurora-mysql.json` |
 | RDS PostgreSQL | `src/catalog/rds-postgresql.json` |
@@ -166,6 +167,29 @@
 - **5xx 오류율 높음**: 전체 요청 중 5xx 비율(%)입니다. 일시적 오류로 울리지 않도록 0보다 큰 값으로 두세요.
 - **4xx 오류율 높음**: 클라이언트 오류 비율(%)입니다. 봇·잘못된 링크로도 오르므로 평소 수준을 보고 정하세요.
 - **오리진 응답 지연 높음 (p90)**: 배포의 '추가 지표'를 켜야 데이터가 생깁니다(추가 요금). 오리진 응답 제한 시간의 80% 정도가 기준입니다. 기본 24000ms는 제한 시간 30초 기준입니다.
+
+## Route 53 Health Check
+
+- 리소스 키: `route53-health-check`
+- 기본 디멘션: `HealthCheckId`
+- 파일: `src/catalog/route53-health-check.json`
+
+| 지표 | metricName | 통계 | period | N/M | 연산 | 임계값 | 결측 | 기본 | 배지 |
+|---|---|---|---|---|---|---|---|---|---|
+| Health Check 비정상 | `HealthCheckStatus` | Minimum | 60s | 2/3 | < | 1 | missing | ● | 기본, us-east-1 |
+| 정상 판정 비율 낮음 | `HealthCheckPercentageHealthy` | Minimum | 60s | 3/5 | < | 80% | missing |  | us-east-1 |
+| 정상 하위 Health Check 수 부족 | `ChildHealthCheckHealthyCount` | Average | 60s | 2/3 | < | 1 | missing |  | 계산형 전용, 임계값 조정, us-east-1 |
+| TCP 연결 시간 높음 | `ConnectionTime` | Average | 60s | 3/5 | > | 1000ms | notBreaching |  | 지연 측정 필요, us-east-1 |
+| SSL 핸드셰이크 시간 높음 | `SSLHandshakeTime` | Average | 60s | 3/5 | > | 1000ms | notBreaching |  | HTTPS, 지연 측정 필요, us-east-1 |
+| 첫 바이트 응답 시간 높음 | `TimeToFirstByte` | Average | 60s | 3/5 | > | 2000ms | notBreaching |  | HTTP/HTTPS, 지연 측정 필요, us-east-1 |
+
+참고:
+- **Health Check 비정상**: 1은 정상, 0은 비정상입니다. 최근 3분 중 2분 이상 비정상이면 알람입니다. 데이터가 없으면 INSUFFICIENT_DATA로 두어 삭제·비활성 상태를 별도로 확인합니다.
+- **정상 판정 비율 낮음**: Route 53 상태 확인기가 정상으로 판단한 비율입니다. 일부 지역의 일시 장애를 걸러내도록 80%에서 시작하되 평소 수준에 맞춰 조정하세요.
+- **정상 하위 Health Check 수 부족**: 계산형 Health Check에서 정상인 하위 Health Check 수입니다. 실제로 유지해야 할 최소 정상 개수에 맞춰 임계값을 반드시 조정하세요.
+- **TCP 연결 시간 높음**: Route 53 상태 확인기가 TCP 연결을 맺는 평균 시간입니다. Health Check에서 지연 시간 측정을 켜야 하며, 기본 1000ms는 시작값이므로 평소 응답 시간에 맞춰 조정하세요.
+- **SSL 핸드셰이크 시간 높음**: HTTPS Health Check의 SSL 핸드셰이크 평균 시간입니다. 지연 시간 측정을 켠 HTTPS 상태 확인에만 사용하며 평소 수준에 맞춰 임계값을 조정하세요.
+- **첫 바이트 응답 시간 높음**: HTTP/HTTPS 요청 후 첫 바이트를 받을 때까지의 평균 시간입니다. 지연 시간 측정을 켜야 하며, 기본 2000ms는 시작값이므로 서비스 기준에 맞춰 조정하세요.
 
 ## Aurora PostgreSQL
 

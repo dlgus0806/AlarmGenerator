@@ -73,6 +73,25 @@ function splitJudgment(text: string): { verdict: Verdict; conclusion: string; de
   return { verdict, conclusion, detail };
 }
 
+function toPreflightPayload(specs: AlarmSpec[]) {
+  return specs.map((s) => ({
+    name: s.alarmName,
+    ns: s.namespace,
+    metric: s.metricName,
+    dims: s.dimensions.filter((d) => d.value).map((d) => ({ name: d.name, value: d.value })),
+    threshold: s.threshold,
+    displayThreshold: s.displayThreshold,
+    unit: s.thresholdUnit,
+    comparison: s.comparisonOperator,
+    stat: s.statistic ?? s.extendedStatistic,
+    period: s.period,
+    evaluationPeriods: s.evaluationPeriods,
+    datapointsToAlarm: s.datapointsToAlarm,
+    treatMissingData: s.treatMissingData,
+    anomaly: s.anomaly,
+  }));
+}
+
 export function OutputPanel({
   global,
   resources,
@@ -103,22 +122,7 @@ export function OutputPanel({
     setAiLoading(true);
     setAiResult(null);
     try {
-      const payload = specs.map((s) => ({
-        name: s.alarmName,
-        ns: s.namespace,
-        metric: s.metricName,
-        dims: s.dimensions.filter((d) => d.value).map((d) => ({ name: d.name, value: d.value })),
-        threshold: s.threshold,
-        displayThreshold: s.displayThreshold,
-        unit: s.thresholdUnit,
-        comparison: s.comparisonOperator,
-        stat: s.statistic ?? s.extendedStatistic,
-        period: s.period,
-        evaluationPeriods: s.evaluationPeriods,
-        datapointsToAlarm: s.datapointsToAlarm,
-        treatMissingData: s.treatMissingData,
-        anomaly: s.anomaly,
-      }));
+      const payload = toPreflightPayload(specs);
       const params = new URLSearchParams({
         region: global.region,
         specs: JSON.stringify(payload),
@@ -153,20 +157,9 @@ export function OutputPanel({
     }
   }
 
-  // 적용/변경 시 자동 점검 트리거용 시그니처(이름·지표·임계값·디멘션이 바뀔 때만 재실행).
-  const preflightSig = useMemo(
-    () =>
-      JSON.stringify(
-        specs.map((s) => [
-          s.alarmName,
-          s.namespace,
-          s.metricName,
-          s.threshold,
-          s.dimensions.map((d) => `${d.name}=${d.value}`),
-        ]),
-      ),
-    [specs],
-  );
+  // AI 점검 요청에 실제로 전달되는 전체 정의를 시그니처로 사용한다.
+  // 기간·통계·M/N·연산자·결측 처리 변경도 즉시 "이전 기준"으로 표시된다.
+  const preflightSig = useMemo(() => JSON.stringify(toPreflightPayload(specs)), [specs]);
 
   // 적용(AI/템플릿/카드 생성)이 일어나면 점검 탭으로 전환한다.
   useEffect(() => {

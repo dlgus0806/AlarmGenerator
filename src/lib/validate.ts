@@ -18,7 +18,7 @@ const VALID_MISSING_DATA = new Set(['breaching', 'notBreaching', 'ignore', 'miss
 const SNS_ARN = /^arn:aws(-[a-z]+)*:sns:([a-z0-9-]+):(\d{12}):(.+)$/;
 
 /** 글로벌 메트릭은 알람도 us-east-1에 있어야 한다. */
-const US_EAST_1_ONLY_NAMESPACES = new Set(['AWS/CloudFront', 'AWS/Billing']);
+const US_EAST_1_ONLY_NAMESPACES = new Set(['AWS/CloudFront', 'AWS/Route53', 'AWS/Billing']);
 
 /**
  * AI 호출 전에 돌리는 결정론적 검증. 여기서 잡히는 것들은

@@ -6,7 +6,7 @@ import { parseDiscovery, toResourceEntries, type DiscoveredResource } from '../l
 interface Props {
   global: GlobalConfig;
   onApply: (result: IntakeApply) => boolean;
-  onAdd: (entries: ResourceEntry[]) => void;
+  onAdd: (entries: ResourceEntry[]) => boolean;
   /** 계정 검증 결과를 상위로 올린다(점검 패널이 공유). 무효화 시 null. */
   onValidatedRole?: (v: { accountId: string; account: string } | null) => void;
   /** 로그인 상태 (백엔드 OAuth 구성 시) */
@@ -40,6 +40,7 @@ const KIND_ORDER: DiscoveredResource['kind'][] = [
   'ECS',
   'Lambda',
   'CloudFront',
+  'Route53HealthCheck',
 ];
 const KIND_LABEL: Record<DiscoveredResource['kind'], string> = {
   EC2: 'EC2 인스턴스',
@@ -50,6 +51,7 @@ const KIND_LABEL: Record<DiscoveredResource['kind'], string> = {
   ECS: 'ECS 서비스',
   Lambda: 'Lambda 함수',
   CloudFront: 'CloudFront 배포 (글로벌)',
+  Route53HealthCheck: 'Route 53 Health Check (글로벌)',
 };
 
 const DEFAULT_ACCOUNT_QUESTION =
@@ -167,8 +169,8 @@ export function AiPanel({
   function createCards() {
     if (!found) return;
     const selected = [...picked].map((i) => found[i]).filter((r) => r.typeKey);
-    onAdd(toResourceEntries(selected));
-    flash(`${selected.length}개 리소스 카드 생성됨`);
+    if (!onAdd(toResourceEntries(selected))) return;
+    flash(`${selected.length}개 리소스 카드로 교체됨`);
   }
 
   function apply(json: string) {
@@ -472,10 +474,10 @@ export function AiPanel({
 
           <div className="discover-footer">
             <span className="hint" style={{ margin: 0 }}>
-              선택한 리소스마다 기본 지표가 켜진 카드가 만들어집니다.
+              선택한 리소스만 카드로 적용되며 기존 카드는 교체됩니다.
             </span>
             <button className="btn btn-primary" disabled={picked.size === 0} onClick={createCards}>
-              {picked.size > 0 ? `선택한 ${picked.size}개로 카드 생성` : '리소스를 선택하세요'}
+              {picked.size > 0 ? `선택한 ${picked.size}개 카드 적용` : '리소스를 선택하세요'}
             </button>
           </div>
         </div>

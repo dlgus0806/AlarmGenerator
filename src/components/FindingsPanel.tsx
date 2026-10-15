@@ -41,7 +41,13 @@ function groupFindings(findings: Finding[]): FindingGroup[] {
   return LEVEL_ORDER.flatMap((lv) => groups.filter((g) => g.level === lv));
 }
 
-export function FindingsPanel({ findings }: { findings: Finding[] }) {
+export function FindingsPanel({
+  findings,
+  alarmCount,
+}: {
+  findings: Finding[];
+  alarmCount: number;
+}) {
   const [open, setOpen] = useState(true);
   const counts = countByLevel(findings);
   const groups = groupFindings(findings);
@@ -52,7 +58,7 @@ export function FindingsPanel({ findings }: { findings: Finding[] }) {
         <div className="header-title">
           <h2 style={{ marginBottom: 2 }}>사전 검증</h2>
           <span className="hint" style={{ margin: 0 }}>
-            AI 호출 전 결정론적 규칙 검사
+            현재 구성 자동 반영 · 알람 {alarmCount}건
           </span>
         </div>
         <div className="row-gap" style={{ alignItems: 'center' }}>

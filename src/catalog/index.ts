@@ -14,6 +14,7 @@ import asg from './asg.json';
 import ecs from './ecs.json';
 import targetGroup from './target-group.json';
 import cloudfront from './cloudfront.json';
+import route53HealthCheck from './route53-health-check.json';
 import accountSecurity from './account-security.json';
 
 /**
@@ -28,6 +29,7 @@ export const CATALOG: ResourceType[] = [
   ecs as ResourceType,
   lambda as ResourceType,
   cloudfront as ResourceType,
+  route53HealthCheck as ResourceType,
   auroraPg as ResourceType,
   auroraMysql as ResourceType,
   rdsPg as ResourceType,

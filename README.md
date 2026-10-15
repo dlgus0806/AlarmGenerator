@@ -1,81 +1,90 @@
 # CloudWatch Alarm Generator
 
-팀 표준 알람을 골라 CloudWatch 알람 생성용 CLI·점검 스크립트·JSON을 만들어 주는 사내 웹 도구.
+AWS 리소스에 적용할 CloudWatch 알람을 표준화하고, CloudShell에서 실행할 AWS CLI 스크립트를 만드는 사내 웹 도구입니다.
 
-도구는 **조회와 산출물 생성만** 한다. 실제 알람 생성은 사람이 CloudShell에서 실행한다.
-
-- 사이트: `https://cw.dlgus.fitcloud.co.kr` (Slack 로그인 필요)
-- 실행·안전 규칙: [`cw-alarm-generator.md`](./cw-alarm-generator.md)의 "절대 금지 목록"
+이 도구는 고객 계정의 리소스를 읽고 알람 정의와 스크립트를 생성합니다. 알람을 직접 실행하거나 기존 리소스를 변경·삭제하지 않으며, 최종 실행은 사용자가 CloudShell에서 수행합니다.
 
 ## 주요 기능
 
-- **AI 어시스턴트 (Amazon Bedrock · Claude)**
-  - 형식 없는 요구사항 텍스트를 알람 JSON으로 변환한다.
-  - 계정을 연결하면(선택) 고객 계정의 EC2·Auto Scaling 그룹·RDS·ALB·대상 그룹·ECS 서비스·Lambda·
-    CloudFront를 읽기 전용으로 불러와 카드로 만들거나,
-    실제 리소스와 최근 CPU 지표를 근거로 알람을 추천한다.
-- **표준 템플릿**: 자주 쓰는 알람 묶음을 저장하고 재사용한다. 저장은 브라우저(localStorage)에만 된다.
-- **리소스 선택**: 리소스와 지표를 직접 토글하고 임계값·평가 조건·결측 처리를 조정한다. 커스텀 지표도 추가할 수 있다.
-- **사전 검증**: 문법·enum·산술 규칙을 즉시 검사한다. 오류가 있으면 CLI 복사·다운로드가 잠긴다.
-- **AI 점검**: 결론(실행 가능 / 주의 후 실행 / 보류)을 먼저 보여준다. 계정을 연결했으면 기존 알람과 대조해
-  신규 / 덮어쓰기 / 데이터 없음을 표로 보여준다.
-- **산출물**: 점검 스크립트(읽기 전용), CLI(알람 생성), JSON(재편집·이력 관리).
+- **AI 어시스턴트**: 자연어 요구사항을 알람 구성으로 변환하고, 연결한 계정의 실제 리소스를 기준으로 알람을 추천합니다.
+- **표준 템플릿**: 자주 사용하는 알람 구성을 저장하고 재사용합니다.
+- **리소스 직접 선택**: 리소스와 지표를 선택하고 임계값, 평가 조건, 결측 데이터 처리를 조정합니다.
+- **계정 리소스 조회**: 고객 계정을 읽기 전용으로 연결해 실제 리소스를 불러오고, 선택한 리소스를 카드로 적용합니다.
+- **사전 검증과 AI 점검**: 문법·설정 오류를 즉시 검사하고, 기존 알람·지표 데이터와의 충돌 가능성을 점검합니다.
+- **산출물 생성**: 점검 스크립트, 알람 생성 CLI, 재편집용 JSON을 제공합니다.
 
-지원 리소스: EC2, Auto Scaling 그룹, ALB, ALB 대상 그룹, ECS 서비스, Lambda, CloudFront,
-Aurora(PostgreSQL·MySQL), RDS(PostgreSQL·MySQL·MariaDB·Oracle·SQL Server), 계정 보안(CloudTrail 지표).
-지표 목록은 [`catalog-metrics.md`](./catalog-metrics.md).
+지원 리소스는 EC2, Auto Scaling 그룹, ALB와 대상 그룹, ECS, Lambda, CloudFront, Route 53 Health Check, Aurora, RDS 등입니다. 상세 지표는 [`catalog-metrics.md`](./catalog-metrics.md)에서 확인할 수 있습니다.
 
-## 구성
+## 사용 흐름
 
+1. 전역 설정에서 리전과 SNS 토픽을 입력합니다.
+2. AI 어시스턴트, 표준 템플릿, 리소스 직접 선택 중 하나로 알람을 구성합니다.
+3. 사전 검증과 AI 점검 결과를 확인합니다.
+4. 점검 스크립트와 CLI를 내려받거나 복사합니다.
+5. 대상 계정의 CloudShell에서 계정과 리전을 확인한 뒤 사용자가 직접 실행합니다.
+
+## 구조
+
+```text
+브라우저
+  ├─ 알람 구성·검증·스크립트 생성
+  └─ 백엔드 API
+       ├─ Slack 로그인
+       ├─ AI 변환·추천·점검
+       └─ 자격증명 브로커
+            └─ 고객 계정 읽기 전용 세션
 ```
-브라우저 ── https ──> CloudFront (cw.dlgus.fitcloud.co.kr)
-                        ├─ /        → S3 (프론트엔드 정적 파일)
-                        └─ /api/*   → 백엔드 Lambda  cw-alarm-discover
-                                        ├─ Slack OAuth 로그인·세션
-                                        ├─ Bedrock (AI 변환·추천·점검)
-                                        └─ 자격증명 브로커 Lambda  cw-crossaccount-credential-broker
-                                             └─ 고객 계정 읽기 전용 세션 (FITCLOUD 인가 → AssumeRole + ReadOnlyAccess)
-```
 
-계정별로 역할을 위임하지 않고, 이미 고객 역할이 신뢰하고 있는 공유 주체를 브로커가 대신 사용한다.
-자세한 흐름과 운영은 [`deploy/README.md`](./deploy/README.md).
+프론트엔드는 React 기반 정적 웹이며, 백엔드는 AWS Lambda에서 동작합니다. 고객 계정 자격증명은 브라우저로 전달하지 않고 백엔드에서만 사용합니다.
 
-## 로컬 개발
+## 로컬 실행
+
+Node.js와 npm이 필요합니다.
 
 ```bash
 npm install
-npm run dev        # 프론트엔드  http://localhost:5173  (/api/* 는 8787로 프록시)
-npm run server     # 로컬 조회 백엔드  http://localhost:8787  (선택)
 ```
 
-- 알람 구성·사전 검증·산출물 생성은 백엔드 없이 브라우저에서 동작한다.
-- 로컬 백엔드는 로컬 aws CLI 자격증명과 `server/account.local.json`(허용 계정·역할 이름)을 쓴다.
-  예시는 `server/account.local.example.json`.
-- 로컬 백엔드에는 Slack 로그인과 브로커 연동이 없다. 계정 연결(브로커 경유)은 배포 환경에서 확인한다.
-
-## 명령
+터미널 1에서 조회 백엔드를 실행합니다.
 
 ```bash
-npm run build       # 타입 검사 + 프로덕션 빌드
-npm run validate    # 생성 알람을 botocore CloudWatch 모델로 검증 (AWS 호출 없음)
-npm run docs        # 카탈로그 → catalog-metrics.md 재생성 (카탈로그를 고쳤을 때)
-npm run deploy:web  # 빌드 → S3 업로드 → CloudFront 무효화
-deploy/deploy-backend.sh cw-alarm-discover ap-northeast-2   # 백엔드 코드 배포
+npm run server
 ```
 
-카탈로그나 생성기를 고쳤으면 `build`만으로 끝내지 말고 `validate`까지 통과시킨다.
+터미널 2에서 프론트엔드를 실행합니다.
+
+```bash
+npm run dev
+```
+
+브라우저에서 `http://localhost:5173`에 접속합니다. 계정 조회 없이 알람 구성·사전 검증·산출물 생성 기능만 사용할 수도 있습니다.
+
+## 변경 후 검증
+
+```bash
+npm run docs       # 카탈로그 문서 재생성
+npm run build      # TypeScript 검사와 프로덕션 빌드
+npm run validate   # CloudWatch API 모델 기준 알람 파라미터 검증
+```
+
+카탈로그나 생성 로직을 변경했다면 세 명령을 모두 통과시킵니다.
 
 ## 문서 안내
 
-| 문서 | 용도 |
+| 문서 | 내용 |
 |---|---|
-| `README.md` | 이 문서. 개요, 기능, 로컬 개발, 명령 |
-| `cw-alarm-generator.md` | 절대 금지 목록(정본)과 설계 기준 — 이름 규칙, 카탈로그 원칙, 검증, 권한 경계, 리스크 |
-| `deploy/README.md` | 배포와 운영 — 프론트·백엔드·브로커, 환경변수, 승격 체크리스트 |
-| `catalog-metrics.md` | 지표 카탈로그 목록 (JSON에서 자동 생성, 직접 수정하지 않음) |
-| `AGENTS.md` | AI 에이전트용 작업 규칙 요약 |
-| 화면 우하단 `?` | 사용자용 사용 방법 |
+| [`README.md`](./README.md) | 프로젝트 용도, 기능, 구조, 실행 방법 |
+| [`cw-alarm-generator.md`](./cw-alarm-generator.md) | 안전 규칙과 설계 기준 |
+| [`catalog-metrics.md`](./catalog-metrics.md) | 리소스별 알람 지표 목록 |
+| [`deploy/README.md`](./deploy/README.md) | 배포와 운영 방법 |
+| [`AGENTS.md`](./AGENTS.md) | AI 에이전트 작업 규칙 |
+| 화면 우측 하단 `?` | 사용자용 설정 안내 |
 
-## 기술 스택
+## 안전 원칙
 
-React · TypeScript · Vite / Node.js (AWS SDK v3) / AWS Lambda · CloudFront · S3 · Bedrock · CloudWatch
+- 고객 계정 조회는 읽기 전용 세션만 사용합니다.
+- 생성 스크립트에는 CloudWatch 알람 생성 명령만 포함합니다.
+- 기존 알람과 AWS 리소스를 자동으로 삭제하거나 변경하지 않습니다.
+- 액세스 키와 세션 토큰을 브라우저, 로그, 문서, 산출물에 저장하지 않습니다.
+
+상세 규칙은 [`cw-alarm-generator.md`](./cw-alarm-generator.md)의 절대 금지 목록을 따릅니다.

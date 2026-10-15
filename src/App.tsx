@@ -292,14 +292,19 @@ export default function App() {
               authRequired={auth.configured}
               onLogin={auth.login}
               onAdd={(entries) => {
-                // 이미 있는 (타입+리소스ID) 조합은 건너뛰고, 새 카드는 맨 위에 추가
-                setResources((prev) => {
-                  const seen = new Set(prev.map((r) => `${r.typeKey}|${r.resourceId}`));
-                  const fresh = entries.filter((e) => !seen.has(`${e.typeKey}|${e.resourceId}`));
-                  return [...fresh, ...prev];
-                });
+                if (
+                  resources.length > 0 &&
+                  !window.confirm(
+                    `선택한 ${entries.length}개로 현재 리소스 카드 ${resources.length}개를 교체할까요?`,
+                  )
+                ) {
+                  return false;
+                }
+                // 계정에서 선택한 리소스만 남기고 기존 카드 전체를 교체한다.
+                setResources(entries);
                 setApplyNonce((n) => n + 1);
                 scrollToResources();
+                return true;
               }}
             />
           </div>
@@ -358,7 +363,7 @@ export default function App() {
             </div>
           </div>
 
-          <FindingsPanel findings={findings} />
+          <FindingsPanel findings={findings} alarmCount={specs.length} />
           <OutputPanel
             global={global}
             resources={resources}
@@ -373,7 +378,7 @@ export default function App() {
         </div>
       </div>
 
-      <HelpWidget />
+      <HelpWidget authenticated={auth.authenticated} />
     </div>
   );
 }

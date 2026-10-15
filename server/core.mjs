@@ -25,6 +25,7 @@ import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
 import { AutoScalingClient, DescribeAutoScalingGroupsCommand } from '@aws-sdk/client-auto-scaling';
 import { ECSClient, ListClustersCommand, ListServicesCommand } from '@aws-sdk/client-ecs';
 import { CloudFrontClient, ListDistributionsCommand } from '@aws-sdk/client-cloudfront';
+import { Route53Client, ListHealthChecksCommand } from '@aws-sdk/client-route-53';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 
 // 로컬 설정 파일(gitignore)이 있으면 사용, 없으면 환경변수/기본값.
@@ -226,7 +227,7 @@ async function readLambda(cfg) {
   return out.slice(0, LAMBDA_MAX_FUNCTIONS);
 }
 
-/** 추가 리소스(ASG·대상 그룹·ECS·CloudFront) 종류별 최대 개수. 목록이 과하게 길어지지 않게. */
+/** 추가 리소스(ASG·대상 그룹·ECS·CloudFront·Route 53 Health Check) 종류별 최대 개수. */
 const EXTRA_MAX_ITEMS = 500;
 
 /** Auto Scaling 그룹. 디멘션 AutoScalingGroupName. */
@@ -327,6 +328,31 @@ async function readCloudFront(cfg) {
   return out.slice(0, EXTRA_MAX_ITEMS);
 }
 
+/** Route 53 Health Check. 글로벌 서비스이며 CloudWatch 지표는 us-east-1에만 있다. */
+async function readRoute53HealthChecks(cfg) {
+  const c = new Route53Client({ ...cfg, region: 'us-east-1' });
+  const out = [];
+  let marker;
+  do {
+    const page = await c.send(new ListHealthChecksCommand({ Marker: marker, MaxItems: 100 }));
+    for (const h of page.HealthChecks ?? []) {
+      const config = h.HealthCheckConfig ?? {};
+      out.push({
+        Id: h.Id,
+        Type: config.Type,
+        FQDN: config.FullyQualifiedDomainName,
+        IPAddress: config.IPAddress,
+        Port: config.Port,
+        ResourcePath: config.ResourcePath,
+        Disabled: config.Disabled,
+        MeasureLatency: config.MeasureLatency,
+      });
+    }
+    marker = page.IsTruncated ? page.NextMarker : undefined;
+  } while (marker && out.length < EXTRA_MAX_ITEMS);
+  return out.slice(0, EXTRA_MAX_ITEMS);
+}
+
 /**
  * 조회 실패를 전체 실패로 만들지 않는다. 실패하면 빈 목록 + 경고 한 줄.
  * (추가 리소스는 고객 계정 read-only 역할에 권한이 없을 수도 있다.)
@@ -344,17 +370,30 @@ async function tolerant(label, fn, warnings) {
 /** 대상 계정에서 알람 대상 리소스 전부를 읽는다 (discover · AI 추천 공용). */
 async function readInventory(cfg) {
   const warnings = [];
-  const [ec2, rds, alb, lambda, asg, targetGroups, ecs, cloudfront] = await Promise.all([
-    readEc2(cfg),
-    readRds(cfg),
-    readAlb(cfg),
-    readLambda(cfg),
-    tolerant('Auto Scaling', () => readAsg(cfg), warnings),
-    tolerant('대상 그룹', () => readTargetGroups(cfg), warnings),
-    tolerant('ECS', () => readEcs(cfg), warnings),
-    tolerant('CloudFront', () => readCloudFront(cfg), warnings),
-  ]);
-  return { ec2, rds, alb, lambda, asg, targetGroups, ecs, cloudfront, warnings };
+  const [ec2, rds, alb, lambda, asg, targetGroups, ecs, cloudfront, route53HealthChecks] =
+    await Promise.all([
+      readEc2(cfg),
+      readRds(cfg),
+      readAlb(cfg),
+      readLambda(cfg),
+      tolerant('Auto Scaling', () => readAsg(cfg), warnings),
+      tolerant('대상 그룹', () => readTargetGroups(cfg), warnings),
+      tolerant('ECS', () => readEcs(cfg), warnings),
+      tolerant('CloudFront', () => readCloudFront(cfg), warnings),
+      tolerant('Route 53 Health Check', () => readRoute53HealthChecks(cfg), warnings),
+    ]);
+  return {
+    ec2,
+    rds,
+    alb,
+    lambda,
+    asg,
+    targetGroups,
+    ecs,
+    cloudfront,
+    route53HealthChecks,
+    warnings,
+  };
 }
 
 /**

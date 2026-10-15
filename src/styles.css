@@ -871,3 +871,68 @@ select { text-overflow: ellipsis; min-width: 0; }
 /* 접힌 섹션 제목 오른쪽 요약: 길면 말줄임 */
 .advanced > summary { min-width: 0; }
 .mc-cond-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- 로그인 사용 방법 유도: 화면을 흐리게 덮고 우하단 물음표를 가리키는 말풍선 ---- */
+.help-coachmark-backdrop {
+  position: fixed; inset: 0; z-index: 49;
+  background: rgba(15, 23, 42, .42);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  animation: help-backdrop-in .18s ease-out;
+}
+.help-coachmark {
+  position: fixed; right: 22px; bottom: 88px; z-index: 51;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px;
+  width: min(304px, calc(100vw - 32px)); min-height: 72px; box-sizing: border-box;
+  padding: 16px; border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--panel); color: var(--text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .32);
+  animation: help-coachmark-in .22s ease-out;
+}
+.help-coachmark strong { display: block; font-size: var(--fs-h3); line-height: 1.45; }
+.help-coachmark-actions { display: flex; align-items: center; justify-content: flex-end; }
+.help-coachmark-actions .btn { min-width: 48px; }
+.help-coachmark-arrow {
+  position: absolute; right: 18px; bottom: -8px; width: 14px; height: 14px;
+  border-right: 1px solid var(--accent); border-bottom: 1px solid var(--accent);
+  background: var(--panel); transform: rotate(45deg);
+}
+@keyframes help-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes help-coachmark-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-coachmark-backdrop, .help-coachmark { animation: none; }
+}
+
+/* ---- 사용 방법 > 알람 구성: 세 가지 선택 방식을 먼저 3칸으로 구분 ---- */
+.help-methods {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+  margin-bottom: 16px;
+}
+.help-method-wrap { display: flex; flex-direction: column; min-width: 0; }
+.help-method-number {
+  align-self: flex-start; position: relative; z-index: 1; margin: 0 0 -8px 10px;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-fg); font-size: var(--fs-meta); font-weight: 700;
+}
+.help-card.help-method-card {
+  flex: 1; padding-top: 17px; border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: var(--panel-2);
+}
+.help-method-card .help-card-head strong { color: var(--accent); font-size: var(--fs-h3); }
+.help-subtitle {
+  margin: 0 0 8px; font-size: var(--fs-body); color: var(--text); font-weight: 700;
+}
+/* 방법 1~3과 공통 기능의 단계 흐름을 같은 테두리 박스로 표시 */
+.help-flow {
+  align-content: flex-start; min-height: 30px; box-sizing: border-box;
+  margin-top: 4px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+}
+.help-method-card .help-flow { margin-top: auto; }
+@media (max-width: 680px) {
+  .help-methods { grid-template-columns: 1fr; }
+  .help-coachmark { right: 16px; bottom: 82px; }
+}
