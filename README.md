@@ -4,13 +4,6 @@ AWS 리소스에 적용할 CloudWatch 알람을 표준화하고, CloudShell에�
 
 이 도구는 고객 계정의 리소스를 읽고 알람 정의와 스크립트를 생성합니다. 알람을 직접 실행하거나 기존 리소스를 변경·삭제하지 않으며, 최종 실행은 사용자가 CloudShell에서 수행합니다.
 
-## 화면
-
-<img width="1182" height="655" alt="메인 화면" src="https://github.com/user-attachments/assets/519dc3e2-8761-4de9-a6b0-187c541222c1" />
-<img width="1182" height="745" alt="구성화면1" src="https://github.com/user-attachments/assets/50e56133-9566-4dbd-885e-706df345c2a0" />
-<img width="1175" height="916" alt="구성화면2" src="https://github.com/user-attachments/assets/ec9de00b-b9b2-4f43-a92c-fd8e25823f2f" />
-<img width="1181" height="912" alt="구성화면3" src="https://github.com/user-attachments/assets/74ffe091-503f-49ca-968b-6718c3351a2e" />
-
 ## 주요 기능
 
 - **AI 어시스턴트**: 자연어 요구사항을 알람 구성으로 변환하고, 연결한 계정의 실제 리소스를 기준으로 알람을 추천합니다.
