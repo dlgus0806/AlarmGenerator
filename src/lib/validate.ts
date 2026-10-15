@@ -1,5 +1,6 @@
 import type { AlarmSpec, Finding, GlobalConfig, ResourceEntry } from '../types';
 import { getResourceType } from '../catalog';
+import { ANOMALY_OPERATORS } from './build';
 import { ALARM_NAME_PATTERN, MAX_ALARM_NAME_LENGTH, PREFIX_PATTERN } from './naming';
 
 const VALID_OPERATORS = new Set([
@@ -17,7 +18,7 @@ const VALID_MISSING_DATA = new Set(['breaching', 'notBreaching', 'ignore', 'miss
 const SNS_ARN = /^arn:aws(-[a-z]+)*:sns:([a-z0-9-]+):(\d{12}):(.+)$/;
 
 /** 글로벌 메트릭은 알람도 us-east-1에 있어야 한다. */
-const US_EAST_1_ONLY_NAMESPACES = new Set(['AWS/CloudFront', 'AWS/Billing']);
+const US_EAST_1_ONLY_NAMESPACES = new Set(['AWS/CloudFront', 'AWS/Route53', 'AWS/Billing']);
 
 /**
  * AI 호출 전에 돌리는 결정론적 검증. 여기서 잡히는 것들은
@@ -75,19 +76,30 @@ export function validate(
     });
   }
 
-  const topics: [string, string][] = global.splitSeverity
-    ? [
-        ['critical SNS', global.snsCritical],
-        ['warning SNS', global.snsWarning],
-      ]
-    : [['SNS', global.snsCritical]];
-
-  for (const [label, arn] of topics) {
-    const value = arn.trim();
+  const topicList = (global.snsTopics ?? []).map((t) => t.trim());
+  const nonEmpty = topicList.filter(Boolean);
+  if (nonEmpty.length === 0) {
+    add({ level: 'error', category: 'sns', message: 'SNS Topic ARN을 최소 1개 입력하세요.' });
+  }
+  const seenTopics = new Set<string>();
+  topicList.forEach((value, i) => {
+    const label = topicList.length > 1 ? `SNS ${i + 1}번` : 'SNS';
     if (!value) {
-      add({ level: 'error', category: 'sns', message: `${label} Topic ARN을 입력하세요.` });
-      continue;
+      // 빈 행: 목록 전체가 비어 있으면 위에서 이미 안내했으므로 여러 행일 때만 개별 안내.
+      if (topicList.length > 1) {
+        add({ level: 'error', category: 'sns', message: `${label} Topic ARN이 비어 있습니다.` });
+      }
+      return;
     }
+    if (seenTopics.has(value)) {
+      add({
+        level: 'warning',
+        category: 'sns',
+        message: `${label} Topic ARN이 중복됩니다.`,
+        fix: '같은 토픽은 한 번만 넣으면 됩니다. 중복은 무시됩니다.',
+      });
+    }
+    seenTopics.add(value);
     const m = SNS_ARN.exec(value);
     if (!m) {
       add({
@@ -96,7 +108,7 @@ export function validate(
         message: `${label} Topic ARN 형식이 올바르지 않습니다.`,
         fix: 'arn:aws:sns:<리전>:<계정12자리>:<토픽이름> 형태여야 합니다.',
       });
-      continue;
+      return;
     }
     if (m[2] !== global.region) {
       add({
@@ -106,7 +118,7 @@ export function validate(
         fix: 'SNS 토픽은 알람과 같은 리전이어야 합니다. 알람은 생성되지만 알림이 가지 않습니다.',
       });
     }
-  }
+  });
 
   // ---- 리소스 입력 ----
   for (const entry of resources) {
@@ -166,13 +178,14 @@ export function validate(
       });
     }
 
-    if (!id) {
+    if (!id && type.dimensionName) {
+      // 디멘션이 없는 계정 전역 타입(예: 루트 로그인)은 리소스 ID가 없어도 된다.
       add({
         level: 'error',
         category: 'resource',
         message: `${label}: 리소스 ID가 비어 있습니다.`,
       });
-    } else if (type.idPattern && !new RegExp(type.idPattern).test(id)) {
+    } else if (id && type.idPattern && !new RegExp(type.idPattern).test(id)) {
       add({
         level: 'warning',
         category: 'resource',
@@ -185,7 +198,9 @@ export function validate(
       const preset = type.metrics.find((m) => m.key === sel.metricKey);
       if (!preset) continue;
       for (const dim of preset.extraDimensions ?? []) {
-        if (!(sel.extraDimValues[dim.name] ?? '').trim()) {
+        // 기본값을 채워 넣을 수 있으므로 실효값(입력값 ?? 기본값) 기준으로 검사한다.
+        const effective = (sel.extraDimValues[dim.name] ?? dim.default ?? '').trim();
+        if (dim.required !== false && !effective) {
           add({
             level: 'error',
             category: 'dimension',
@@ -207,9 +222,23 @@ export function validate(
   // ---- 알람별 검증 ----
   const seen = new Map<string, number>();
 
+  const hasGlobalTopics = nonEmpty.length > 0;
+
   for (const spec of specs) {
     const n = spec.alarmName;
     seen.set(n, (seen.get(n) ?? 0) + 1);
+
+    // 지표별 SNS 라우팅에서 토픽을 하나도 고르지 않은 경우.
+    // (전역 토픽 자체가 없으면 위의 전역 SNS 오류가 이미 안내한다)
+    if (hasGlobalTopics && spec.snsTopicArns.length === 0) {
+      add({
+        level: 'error',
+        category: 'sns',
+        alarmName: n,
+        message: '알림을 보낼 SNS 토픽이 선택되지 않았습니다.',
+        fix: '추가 구성의 "알림 보낼 SNS 토픽"에서 하나 이상 선택하세요. 알람은 생겨도 알림이 가지 않습니다.',
+      });
+    }
 
     if (n.length > MAX_ALARM_NAME_LENGTH) {
       add({
@@ -229,6 +258,24 @@ export function validate(
       });
     }
 
+    if (!Number.isInteger(spec.evaluationPeriods) || spec.evaluationPeriods < 1) {
+      add({
+        level: 'error',
+        category: 'evaluation',
+        alarmName: n,
+        message: `evaluation-periods(${spec.evaluationPeriods})는 1 이상의 정수여야 합니다.`,
+        fix: '소수(예: 2.5)는 사용할 수 없습니다. 2, 3 처럼 정수로 입력하세요.',
+      });
+    }
+    if (!Number.isInteger(spec.datapointsToAlarm) || spec.datapointsToAlarm < 1) {
+      add({
+        level: 'error',
+        category: 'evaluation',
+        alarmName: n,
+        message: `datapoints-to-alarm(${spec.datapointsToAlarm})는 1 이상의 정수여야 합니다.`,
+        fix: '소수는 사용할 수 없습니다. 정수로 입력하세요.',
+      });
+    }
     if (spec.datapointsToAlarm > spec.evaluationPeriods) {
       add({
         level: 'error',
@@ -293,6 +340,44 @@ export function validate(
         category: 'enum',
         alarmName: n,
         message: `comparison-operator "${spec.comparisonOperator}"는 유효하지 않습니다.`,
+      });
+    }
+
+    // ---- 이상 탐지 일관성 ----
+    const opIsAnomaly = ANOMALY_OPERATORS.has(spec.comparisonOperator);
+    if (spec.anomaly) {
+      if (!opIsAnomaly) {
+        add({
+          level: 'error',
+          category: 'anomaly',
+          alarmName: n,
+          message: '이상 탐지 알람에는 밴드 기준 연산자만 쓸 수 있습니다.',
+          fix: 'LessThanLowerOrGreaterThanUpperThreshold / GreaterThanUpperThreshold / LessThanLowerThreshold 중 하나여야 합니다.',
+        });
+      }
+      if (!Number.isFinite(spec.bandWidth) || (spec.bandWidth ?? 0) <= 0) {
+        add({
+          level: 'error',
+          category: 'anomaly',
+          alarmName: n,
+          message: `이상 탐지 밴드 폭(${spec.bandWidth})은 0보다 큰 숫자여야 합니다.`,
+          fix: '표준편차 배수입니다. 보통 2를 씁니다.',
+        });
+      }
+      add({
+        level: 'info',
+        category: 'anomaly',
+        alarmName: n,
+        message: '이상 탐지 알람입니다. put-metric-alarm 실행 시 밴드 모델이 자동 생성됩니다.',
+        fix: '모델이 학습되기 전(약 2주 분량 데이터)까지는 밴드가 넓거나 INSUFFICIENT_DATA일 수 있습니다.',
+      });
+    } else if (opIsAnomaly) {
+      add({
+        level: 'error',
+        category: 'anomaly',
+        alarmName: n,
+        message: '정적 임계값 알람에 밴드 기준 연산자를 쓸 수 없습니다.',
+        fix: '조건에서 "이상 탐지"를 선택하거나, 정적 연산자(>, >=, <, <=)로 바꾸세요.',
       });
     }
     if (!VALID_MISSING_DATA.has(spec.treatMissingData)) {

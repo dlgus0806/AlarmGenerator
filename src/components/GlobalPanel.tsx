@@ -1,6 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { GlobalConfig, TagPair } from '../types';
-import { REGIONS } from '../lib/io';
+import { REGIONS, REGION_NAMES } from '../lib/io';
 
 interface Props {
   value: GlobalConfig;
@@ -9,8 +9,17 @@ interface Props {
   importError: string;
 }
 
+/**
+ * 전역 설정.
+ *  - 리전 · SNS Topic ARN: 알람 생성에 필수라 항상 펼쳐 둔다.
+ *  - prefix · 태그 · 알람 이름 방식: 기본값으로도 동작하므로 같은 패널 안에서 접어 둔다.
+ */
 export function GlobalPanel({ value, onChange, onImport, importError }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
+  // 패널 전체 접기(기본 펼침). 접으면 현재 값을 배지 한 줄로 요약한다.
+  const [open, setOpen] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+
   const set = <K extends keyof GlobalConfig>(key: K, v: GlobalConfig[K]) =>
     onChange({ ...value, [key]: v });
   const patchTag = (i: number, patch: Partial<TagPair>) =>
@@ -19,11 +28,22 @@ export function GlobalPanel({ value, onChange, onImport, importError }: Props) {
       tags: value.tags.map((t, idx) => (idx === i ? { ...t, ...patch } : t)),
     });
 
+  const snsList = value.snsTopics.length === 0 ? [''] : value.snsTopics;
+  const filledTags = value.tags.filter((t) => t.key.trim()).length;
+  const validSns = value.snsTopics.filter((t) => t.trim()).length;
+
   return (
-    <section className="panel">
+    <section className="panel global-panel">
       <div className="panel-head">
         <h2>전역 설정</h2>
         <div className="row-gap">
+          <button
+            className="btn btn-ghost"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? '접기' : '펼치기'}
+          </button>
           <button className="btn btn-ghost" onClick={() => fileRef.current?.click()}>
             JSON 불러오기
           </button>
@@ -43,137 +63,185 @@ export function GlobalPanel({ value, onChange, onImport, importError }: Props) {
 
       {importError && <p className="inline-error">{importError}</p>}
 
-      <div className="grid2">
-        <label className="field">
-          <span>prefix (선택)</span>
-          <input
-            value={value.prefix}
-            placeholder="prd-was"
-            onChange={(e) => set('prefix', e.target.value)}
-          />
-          <small>
-            소문자·숫자·하이픈. 모든 알람 이름 앞에 붙습니다. 비워두면 접두사 없이 생성됩니다.
-          </small>
-        </label>
-
-        <label className="field">
-          <span>리전</span>
-          <select value={value.region} onChange={(e) => set('region', e.target.value)}>
-            {REGIONS.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-          <small>CloudShell 리전과 일치해야 합니다.</small>
-        </label>
-      </div>
-
-      <label className="field">
-        <span className="row-between">
-          <span>
-            SNS Topic ARN {value.splitSeverity && '(critical)'} <em>필수</em>
+      {/* 접힘: 현재 설정 요약. SNS 가 없으면 빨간 배지로 경고 */}
+      {!open && (
+        <div className="global-summary">
+          <span className="badge">
+            {value.region}
+            {REGION_NAMES[value.region] ? ` · ${REGION_NAMES[value.region]}` : ''}
           </span>
-          <label className="checkline">
-            <input
-              type="checkbox"
-              checked={value.splitSeverity}
-              onChange={(e) => set('splitSeverity', e.target.checked)}
-            />
-            심각도별로 분리
-          </label>
-        </span>
-        <input
-          value={value.snsCritical}
-          placeholder={`arn:aws:sns:${value.region}:111122223333:ops-alert`}
-          onChange={(e) => set('snsCritical', e.target.value)}
-        />
-        <small>ARN의 리전이 위 리전과 다르면 알림이 가지 않습니다. 자동으로 검사합니다.</small>
-      </label>
-
-      {value.splitSeverity && (
-        <label className="field">
-          <span>
-            SNS Topic ARN (warning) <em>필수</em>
+          <span className={`badge ${validSns === 0 ? 'badge-err' : ''}`}>
+            {validSns === 0 ? 'SNS 미설정' : `SNS ${validSns}개`}
           </span>
-          <input
-            value={value.snsWarning}
-            placeholder={`arn:aws:sns:${value.region}:111122223333:ops-slack`}
-            onChange={(e) => set('snsWarning', e.target.value)}
-          />
-        </label>
+          <span className="badge">
+            {value.prefix.trim() ? `prefix ${value.prefix.trim()}` : 'prefix 없음'}
+          </span>
+          <span className="badge">태그 {filledTags}개</span>
+          <span className="badge">이름 {value.namingMode === 'auto' ? '자동' : '직접'}</span>
+        </div>
       )}
 
+      {open && (
+      <>
+      {/* 필수: 리전(왼쪽) · SNS Topic ARN(오른쪽) 한 줄 배치 — 세로 길이를 줄인다 */}
+      <div className="global-required">
+      <label className="field region-field">
+        <span>
+          리전  <em> 필수</em>
+        </span>
+        <select value={value.region} onChange={(e) => set('region', e.target.value)}>
+          {/* JSON 으로 목록 밖 리전을 불러온 경우에도 값이 사라지지 않도록 그대로 노출 */}
+          {value.region && !REGIONS.includes(value.region) && (
+            <option value={value.region}>{value.region}</option>
+          )}
+          {REGIONS.map((r) => (
+            <option key={r} value={r}>
+              {r} · {REGION_NAMES[r]}
+            </option>
+          ))}
+        </select>
+        <small>CloudShell, SNS 리전과 일치해야 합니다.</small>
+      </label>
+
+      {/* 필수: SNS Topic ARN */}
       <fieldset className="field">
         <span className="row-between">
-          <span>태그 (선택)</span>
+          <span>
+            SNS Topic ARN <em>필수</em>
+          </span>
           <button
-            className="btn btn-ghost"
+            className="btn btn-ghost btn-sm"
             type="button"
-            onClick={() => set('tags', [...value.tags, { key: '', value: '' }])}
+            onClick={() => set('snsTopics', [...value.snsTopics, ''])}
           >
-            + 태그 추가
+            + SNS 추가
           </button>
         </span>
 
-        {value.tags.length === 0 ? (
-          <small>태그 없이 생성됩니다. 필요하면 키·값을 원하는 만큼 추가하세요.</small>
-        ) : (
-          value.tags.map((t, i) => (
-            <div key={i} className="dim-row" style={{ marginTop: 6 }}>
-              <label className="field">
-                <input
-                  value={t.key}
-                  placeholder="Key (예: Owner)"
-                  onChange={(e) => patchTag(i, { key: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <input
-                  value={t.value}
-                  placeholder="Value (예: platform-team)"
-                  onChange={(e) => patchTag(i, { value: e.target.value })}
-                />
-              </label>
+        {snsList.map((arn, i) => (
+          <div key={i} className="dim-row sns-row" style={{ marginTop: i === 0 ? 0 : 6 }}>
+            <label className="field">
+              <input
+                value={arn}
+                placeholder={`arn:aws:sns:${value.region}:111122223333:ops-alert`}
+                onChange={(e) =>
+                  set('snsTopics', snsList.map((t, idx) => (idx === i ? e.target.value : t)))
+                }
+              />
+            </label>
+            {snsList.length > 1 && (
               <button
                 className="btn btn-danger-ghost"
                 type="button"
-                onClick={() => set('tags', value.tags.filter((_, idx) => idx !== i))}
+                onClick={() => set('snsTopics', value.snsTopics.filter((_, idx) => idx !== i))}
               >
                 삭제
               </button>
-            </div>
-          ))
-        )}
+            )}
+          </div>
+        ))}
       </fieldset>
+      </div>
 
-      <fieldset className="field">
-        <span>알람 이름</span>
-        <div className="radio-row">
-          <label className="checkline">
+      {/* 선택: 추가 설정 (같은 패널 안에서 접기) */}
+      <button
+        type="button"
+        className="more-toggle"
+        aria-expanded={moreOpen}
+        onClick={() => setMoreOpen((v) => !v)}
+      >
+        <span className="more-caret">{moreOpen ? '▾' : '▸'}</span>
+        추가 설정
+        {!moreOpen && (
+          <span className="more-summary">
+            {value.prefix.trim() ? `prefix ${value.prefix.trim()}` : 'prefix 없음'} · 태그 {filledTags}개 ·
+            이름 {value.namingMode === 'auto' ? '자동' : '직접'}
+          </span>
+        )}
+      </button>
+
+      {moreOpen && (
+        <div className="more-body">
+          <label className="field">
+            <span>prefix (선택)</span>
             <input
-              type="radio"
-              name="naming"
-              checked={value.namingMode === 'auto'}
-              onChange={() => set('namingMode', 'auto')}
+              value={value.prefix}
+              placeholder="prd-was"
+              onChange={(e) => set('prefix', e.target.value)}
             />
-            자동 생성 (권장)
+            <small>소문자·숫자·하이픈. 알람 이름 앞에 붙고, 비우면 생략됩니다.</small>
           </label>
-          <label className="checkline">
-            <input
-              type="radio"
-              name="naming"
-              checked={value.namingMode === 'manual'}
-              onChange={() => set('namingMode', 'manual')}
-            />
-            직접 입력 허용
-          </label>
+
+          <fieldset className="field">
+            <span className="row-between">
+              <span>Tag (선택)</span>
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                onClick={() => set('tags', [...value.tags, { key: '', value: '' }])}
+              >
+                + Tag 추가
+              </button>
+            </span>
+
+            {value.tags.length === 0 ? (
+              <small>태그 없이 생성됩니다. 필요하면 키·값을 추가하세요.</small>
+            ) : (
+              value.tags.map((t, i) => (
+                <div key={i} className="dim-row tag-row" style={{ marginTop: 6 }}>
+                  <label className="field">
+                    <input
+                      value={t.key}
+                      placeholder="Key"
+                      onChange={(e) => patchTag(i, { key: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <input
+                      value={t.value}
+                      placeholder="Value"
+                      onChange={(e) => patchTag(i, { value: e.target.value })}
+                    />
+                  </label>
+                  <button
+                    className="btn btn-danger-ghost"
+                    type="button"
+                    onClick={() => set('tags', value.tags.filter((_, idx) => idx !== i))}
+                  >
+                    삭제
+                  </button>
+                </div>
+              ))
+            )}
+          </fieldset>
+
+          <fieldset className="field" style={{ marginBottom: 0 }}>
+            <span>알람 이름</span>
+            <div className="radio-row">
+              <label className="checkline">
+                <input
+                  type="radio"
+                  name="naming"
+                  checked={value.namingMode === 'auto'}
+                  onChange={() => set('namingMode', 'auto')}
+                />
+                자동 생성 (권장)
+              </label>
+              <label className="checkline">
+                <input
+                  type="radio"
+                  name="naming"
+                  checked={value.namingMode === 'manual'}
+                  onChange={() => set('namingMode', 'manual')}
+                />
+                직접 입력
+              </label>
+            </div>
+          </fieldset>
         </div>
-        <small>
-          이름에는 임계값을 넣지 않습니다. put-metric-alarm은 이름 기준 upsert이므로, 이름에
-          임계값이 있으면 값을 조정할 때 갱신이 아니라 새 알람이 생기고 옛 알람이 남습니다.
-        </small>
-      </fieldset>
+      )}
+      </>
+      )}
     </section>
   );
 }

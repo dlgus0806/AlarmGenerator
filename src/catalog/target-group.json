@@ -1,0 +1,118 @@
+{
+  "key": "target-group",
+  "label": "로드 밸런서 대상 그룹 (ALB)",
+  "shortLabel": "대상 그룹",
+  "shortCode": "tg",
+  "dimensionName": "TargetGroup",
+  "idPlaceholder": "targetgroup/prd-web-tg/73e2d6bc24d8a067",
+  "idPattern": "^(arn:aws[a-z-]*:elasticloadbalancing:[^:]*:[0-9]+:)?targetgroup/[^/]+/[0-9a-f]+$",
+  "idHint": "TargetGroup 디멘션 값(targetgroup/이름/해시). 로드 밸런서 값은 지표마다 입력",
+  "metrics": [
+    {
+      "key": "unhealthy-hosts",
+      "label": "비정상 대상 존재",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "UnHealthyHostCount",
+      "statistic": "Minimum",
+      "period": 60,
+      "evaluationPeriods": 2,
+      "datapointsToAlarm": 2,
+      "comparisonOperator": "GreaterThanOrEqualToThreshold",
+      "threshold": 1,
+      "thresholdUnit": "count",
+      "treatMissingData": "missing",
+      "severity": "critical",
+      "defaultOn": true,
+      "badges": ["기본"],
+      "note": "Minimum 통계는 모든 로드 밸런서 노드가 비정상으로 볼 때만 잡혀 오탐이 적습니다. 두 번 연속일 때 울립니다.",
+      "extraDimensions": [
+        { "name": "LoadBalancer", "label": "LoadBalancer 디멘션 값", "placeholder": "app/prd-front-alb/50dc6c495c0c9188" }
+      ]
+    },
+    {
+      "key": "healthy-low",
+      "label": "정상 대상 없음",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "HealthyHostCount",
+      "statistic": "Minimum",
+      "period": 60,
+      "evaluationPeriods": 2,
+      "datapointsToAlarm": 2,
+      "comparisonOperator": "LessThanThreshold",
+      "threshold": 1,
+      "thresholdUnit": "count",
+      "treatMissingData": "missing",
+      "severity": "critical",
+      "defaultOn": true,
+      "badges": ["기본"],
+      "note": "정상 대상이 1개 미만(0개)이면 울립니다. 최소로 유지해야 할 대상 수로 올려도 됩니다.",
+      "extraDimensions": [
+        { "name": "LoadBalancer", "label": "LoadBalancer 디멘션 값", "placeholder": "app/prd-front-alb/50dc6c495c0c9188" }
+      ]
+    },
+    {
+      "key": "target-5xx",
+      "label": "대상 5xx 응답",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "HTTPCode_Target_5XX_Count",
+      "statistic": "Sum",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 20,
+      "thresholdUnit": "count",
+      "treatMissingData": "notBreaching",
+      "severity": "warning",
+      "defaultOn": false,
+      "badges": [],
+      "note": "트래픽이 없으면 데이터가 없으므로 결측을 양호로 봅니다. 평균 트래픽의 5% 정도에서 시작해 조정하세요.",
+      "extraDimensions": [
+        { "name": "LoadBalancer", "label": "LoadBalancer 디멘션 값", "placeholder": "app/prd-front-alb/50dc6c495c0c9188" }
+      ]
+    },
+    {
+      "key": "latency-p99",
+      "hidden": true,
+      "label": "대상 응답 시간 p99 높음",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "TargetResponseTime",
+      "extendedStatistic": "p99",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 2,
+      "thresholdUnit": "seconds",
+      "treatMissingData": "notBreaching",
+      "severity": "warning",
+      "defaultOn": false,
+      "badges": [],
+      "extraDimensions": [
+        { "name": "LoadBalancer", "label": "LoadBalancer 디멘션 값", "placeholder": "app/prd-front-alb/50dc6c495c0c9188" }
+      ]
+    },
+    {
+      "key": "conn-error",
+      "hidden": true,
+      "label": "대상 연결 오류",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "TargetConnectionErrorCount",
+      "statistic": "Sum",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "datapointsToAlarm": 1,
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 10,
+      "thresholdUnit": "count",
+      "treatMissingData": "notBreaching",
+      "severity": "warning",
+      "defaultOn": false,
+      "badges": [],
+      "note": "대상이 Lambda 함수인 대상 그룹에는 이 지표가 없습니다.",
+      "extraDimensions": [
+        { "name": "LoadBalancer", "label": "LoadBalancer 디멘션 값", "placeholder": "app/prd-front-alb/50dc6c495c0c9188" }
+      ]
+    }
+  ]
+}

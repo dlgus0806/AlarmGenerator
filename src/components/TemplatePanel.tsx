@@ -1,17 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { AlarmTemplate, ResourceEntry } from '../types';
 import {
   builtinTemplates,
   deleteUserTemplate,
   hasChoices,
   loadUserTemplates,
-  parseTemplate,
-  templateToJson,
   toTemplate,
   upsertUserTemplate,
 } from '../lib/templates';
 import { getResourceType } from '../catalog';
-import { downloadText } from '../lib/io';
 
 interface Props {
   resources: ResourceEntry[];
@@ -21,9 +18,10 @@ interface Props {
 function summarize(t: AlarmTemplate): string {
   const parts = t.resources.map((r) => {
     if (r.choose && r.choose.length > 0) return 'RDS(선택)';
-    const label = getResourceType(r.typeKey)?.label ?? r.typeKey;
-    const n = Object.keys(r.selected).length + (r.customMetrics?.length ?? 0);
-    return `${label} ${n}`;
+    const type = getResourceType(r.typeKey);
+    const label = type?.shortLabel ?? type?.label ?? r.typeKey;
+    const n = r.selected.length + (r.customMetrics?.length ?? 0);
+    return `${label} (${n}개)`;
   });
   return parts.join(' · ') || '(빈 표준)';
 }
@@ -36,7 +34,6 @@ export function TemplatePanel({ resources, onApply }: Props) {
   const [msg, setMsg] = useState('');
   const [openChooser, setOpenChooser] = useState<string | null>(null);
   const [choiceState, setChoiceState] = useState<Record<number, string>>({});
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const all = [...builtins, ...userTemplates];
   const activeMetricCount = resources.reduce(
@@ -69,17 +66,6 @@ export function TemplatePanel({ resources, onApply }: Props) {
     setUserTemplates(deleteUserTemplate(name));
   }
 
-  function handleImport(file: File) {
-    file
-      .text()
-      .then((raw) => {
-        const t = parseTemplate(raw);
-        setUserTemplates(upsertUserTemplate(t));
-        flash(`"${t.name}" 불러옴`);
-      })
-      .catch((e: unknown) => flash(e instanceof Error ? e.message : '불러오기 실패'));
-  }
-
   const idOf = (t: AlarmTemplate) => (t.builtin ? 'b:' : 'u:') + t.name;
 
   function handleApplyClick(t: AlarmTemplate) {
@@ -108,33 +94,23 @@ export function TemplatePanel({ resources, onApply }: Props) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>표준 템플릿</h2>
+        <div className="header-title">
+          <h2 style={{ marginBottom: 2 }}>표준 템플릿</h2>
+          <span className="hint" style={{ margin: 0 }}>
+            자주 쓰는 알람 묶음을 저장·재사용 (EC2·ALB·RDS)
+          </span>
+        </div>
         <div className="row-gap">
           <button className="btn btn-ghost" onClick={handleSave}>
             현재 구성을 표준으로 저장
           </button>
-          <button className="btn btn-ghost" onClick={() => fileRef.current?.click()}>
-            표준 불러오기
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImport(f);
-              e.target.value = '';
-            }}
-          />
         </div>
       </div>
 
       {msg && <p className="hint">{msg}</p>}
 
       <p className="hint" style={{ marginTop: 0 }}>
-        표준을 적용하면 지표·임계값이 채워지고, 고객사 리소스 ID만 입력하면 됩니다. 팀 공유는
-        내보내기 JSON을 Git에 커밋하세요.
+        표준을 적용하면 지표·임계값이 채워지고, 리소스 ID만 입력하면 됩니다.
       </p>
 
       <ul className="template-list">
@@ -154,14 +130,6 @@ export function TemplatePanel({ resources, onApply }: Props) {
                 <div className="row-gap">
                   <button className="btn" onClick={() => handleApplyClick(t)}>
                     {chooserOpen ? '닫기' : '적용'}
-                  </button>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() =>
-                      downloadText(`template-${t.name}.json`, templateToJson(t), 'application/json')
-                    }
-                  >
-                    내보내기
                   </button>
                   {!t.builtin && (
                     <button className="btn btn-danger-ghost" onClick={() => handleDelete(t.name)}>

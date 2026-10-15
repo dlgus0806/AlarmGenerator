@@ -1,9 +1,8 @@
-import type { CustomMetric, ResourceType, Severity } from '../types';
+import type { CustomMetric, ResourceType } from '../types';
 import {
   MISSING_DATA_OPTIONS,
   OPERATOR_OPTIONS,
   PERIOD_OPTIONS,
-  SEVERITY_OPTIONS,
   STATISTIC_OPTIONS,
 } from '../lib/build';
 
@@ -140,8 +139,11 @@ export function CustomMetricEditor({ metric, type, onPatch, onRemove }: Props) {
           <input
             type="number"
             min={1}
+            step={1}
             value={metric.evaluationPeriods}
-            onChange={(e) => onPatch({ evaluationPeriods: Number(e.target.value) })}
+            onChange={(e) =>
+              onPatch({ evaluationPeriods: Math.max(1, Math.round(Number(e.target.value) || 1)) })
+            }
           />
         </label>
         <label className="field">
@@ -149,8 +151,11 @@ export function CustomMetricEditor({ metric, type, onPatch, onRemove }: Props) {
           <input
             type="number"
             min={1}
+            step={1}
             value={metric.datapointsToAlarm}
-            onChange={(e) => onPatch({ datapointsToAlarm: Number(e.target.value) })}
+            onChange={(e) =>
+              onPatch({ datapointsToAlarm: Math.max(1, Math.round(Number(e.target.value) || 1)) })
+            }
           />
         </label>
         <label className="field">
@@ -165,19 +170,7 @@ export function CustomMetricEditor({ metric, type, onPatch, onRemove }: Props) {
               </option>
             ))}
           </select>
-        </label>
-        <label className="field">
-          <span>심각도</span>
-          <select
-            value={metric.severity}
-            onChange={(e) => onPatch({ severity: e.target.value as Severity })}
-          >
-            {SEVERITY_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <small>{MISSING_DATA_OPTIONS.find((o) => o.value === metric.treatMissingData)?.desc}</small>
         </label>
         <label className="field">
           <span>Unit (선택)</span>
@@ -195,11 +188,18 @@ export function CustomMetricEditor({ metric, type, onPatch, onRemove }: Props) {
           checked={metric.useResourceDimension}
           onChange={(e) => onPatch({ useResourceDimension: e.target.checked })}
         />
-        리소스 ID를 <code>{type.dimensionName}</code> 디멘션으로 사용
+        리소스 ID를 기본 디멘션으로 사용
       </label>
+      <p className="hint" style={{ marginTop: 4 }}>
+        체크하면 이 리소스 타입의 기본 디멘션(<code>{type.dimensionName}</code>)에 리소스 ID가
+        들어갑니다. 다른 서비스의 지표라면 체크를 해제하고 아래 &quot;추가 디멘션&quot;에 직접
+        지정하세요.
+      </p>
 
-      <div style={{ marginTop: 10 }}>
-        <span className="hint">추가 디멘션</span>
+      <div style={{ marginTop: 14 }}>
+        <div className="hint" style={{ marginBottom: 8 }}>
+          추가 디멘션
+        </div>
         {metric.dimensions.map((d, i) => (
           <div key={i} className="dim-row" style={{ marginTop: 6 }}>
             <label className="field">
@@ -222,13 +222,13 @@ export function CustomMetricEditor({ metric, type, onPatch, onRemove }: Props) {
                 onPatch({ dimensions: metric.dimensions.filter((_, idx) => idx !== i) })
               }
             >
-              －
+              삭제
             </button>
           </div>
         ))}
         <button
           className="btn btn-ghost"
-          style={{ marginTop: 6 }}
+          style={{ marginTop: metric.dimensions.length ? 8 : 0 }}
           onClick={() =>
             onPatch({ dimensions: [...metric.dimensions, { name: '', value: '' }] })
           }
@@ -236,11 +236,6 @@ export function CustomMetricEditor({ metric, type, onPatch, onRemove }: Props) {
           + 디멘션
         </button>
       </div>
-
-      <p className="metric-note" style={{ marginLeft: 0 }}>
-        카탈로그를 거치지 않은 지표입니다. 실행 전 <code>list-metrics</code>로 실제 존재를
-        확인하세요. 반복해서 쓸 지표라면 <code>src/catalog/*.json</code>에 추가하는 편이 좋습니다.
-      </p>
     </div>
   );
 }

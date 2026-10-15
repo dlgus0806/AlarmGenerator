@@ -86,7 +86,8 @@ function compare(spec: AlarmSpec, a: ExistingAlarm): FieldDiff[] {
     }
   };
 
-  push('threshold', spec.threshold, a.Threshold);
+  // 이상 탐지 알람은 정적 Threshold가 없다(밴드 id로 판정). 임계값 비교는 건너뛴다.
+  if (!spec.anomaly) push('threshold', spec.threshold, a.Threshold);
   push('comparisonOperator', spec.comparisonOperator, a.ComparisonOperator);
   push('period', spec.period, a.Period);
   push('evaluationPeriods', spec.evaluationPeriods, a.EvaluationPeriods);

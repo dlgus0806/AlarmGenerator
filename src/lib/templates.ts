@@ -35,14 +35,23 @@ export function toTemplate(name: string, resources: ResourceEntry[]): AlarmTempl
       .filter((r) => r.selected.length > 0 || (r.customMetrics ?? []).length > 0)
       .map((r) => ({
         typeKey: r.typeKey,
-        selected: structuredClone(r.selected),
+        // SNS 토픽 ARN은 계정마다 달라 표준에 넣지 않는다(적용하면 전역 토픽 전부로 보냄).
+        selected: structuredClone(r.selected).map(({ snsTopics: _drop, ...rest }) => rest),
         customMetrics: r.customMetrics ? structuredClone(r.customMetrics) : undefined,
       })),
   };
 }
 
 /** RDS 엔진 선택 슬롯의 후보 (Aurora PostgreSQL / RDS PostgreSQL / RDS MySQL·MariaDB) */
-export const RDS_ENGINE_CHOICES = ['aurora-pg', 'rds-pg', 'rds-mysql'];
+export const RDS_ENGINE_CHOICES = [
+  'aurora-pg',
+  'aurora-mysql',
+  'rds-pg',
+  'rds-mysql',
+  'rds-mariadb',
+  'rds-oracle',
+  'rds-sqlserver',
+];
 
 /** choose 슬롯이 하나라도 있는지 */
 export function hasChoices(t: AlarmTemplate): boolean {
@@ -100,12 +109,12 @@ export function builtinTemplates(): AlarmTemplate[] {
   return [
     {
       ...base,
-      name: '웹 워크로드 알람 (EC2 + ALB + RDS)',
+      name: 'EC2 + ALB + RDS 알람',
       resources: [typeSlot('ec2'), typeSlot('alb'), chooseSlot(RDS_ENGINE_CHOICES)],
     },
     {
       ...base,
-      name: 'RDS 알람',
+      name: 'RDS 알람 ',
       resources: [chooseSlot(RDS_ENGINE_CHOICES)],
     },
     {

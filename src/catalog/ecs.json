@@ -1,0 +1,84 @@
+{
+  "key": "ecs",
+  "label": "ECS 서비스",
+  "shortLabel": "ECS",
+  "shortCode": "ecs",
+  "dimensionName": "ServiceName",
+  "idPlaceholder": "prd-api-service",
+  "idHint": "ECS 서비스 이름 (클러스터 이름은 지표마다 입력)",
+  "metrics": [
+    {
+      "key": "cpu-high",
+      "label": "서비스 CPU 사용률 높음",
+      "namespace": "AWS/ECS",
+      "metricName": "CPUUtilization",
+      "statistic": "Average",
+      "period": 60,
+      "evaluationPeriods": 5,
+      "datapointsToAlarm": 5,
+      "comparisonOperator": "GreaterThanOrEqualToThreshold",
+      "threshold": 80,
+      "thresholdUnit": "percent",
+      "treatMissingData": "missing",
+      "severity": "warning",
+      "defaultOn": true,
+      "badges": ["기본", "Lv1/2/3"],
+      "levels": [
+        { "level": "Lv1", "threshold": 70, "severity": "warning" },
+        { "level": "Lv2", "threshold": 80, "severity": "warning" },
+        { "level": "Lv3", "threshold": 90, "severity": "critical" }
+      ],
+      "note": "태스크 정의에 잡은 CPU 대비 사용률이라 100%를 넘을 수 있습니다. 배포 중이 아닌데 계속 높으면 CPU 한도를 늘리세요.",
+      "extraDimensions": [
+        { "name": "ClusterName", "label": "클러스터 이름", "placeholder": "prd-cluster", "inName": true }
+      ]
+    },
+    {
+      "key": "mem-high",
+      "label": "서비스 메모리 사용률 높음",
+      "namespace": "AWS/ECS",
+      "metricName": "MemoryUtilization",
+      "statistic": "Average",
+      "period": 60,
+      "evaluationPeriods": 5,
+      "datapointsToAlarm": 5,
+      "comparisonOperator": "GreaterThanOrEqualToThreshold",
+      "threshold": 80,
+      "thresholdUnit": "percent",
+      "treatMissingData": "missing",
+      "severity": "warning",
+      "defaultOn": true,
+      "badges": ["기본", "Lv1/2/3"],
+      "levels": [
+        { "level": "Lv1", "threshold": 70, "severity": "warning" },
+        { "level": "Lv2", "threshold": 80, "severity": "warning" },
+        { "level": "Lv3", "threshold": 90, "severity": "critical" }
+      ],
+      "note": "태스크 정의에 잡은 메모리 대비 사용률이라 100%를 넘을 수 있습니다.",
+      "extraDimensions": [
+        { "name": "ClusterName", "label": "클러스터 이름", "placeholder": "prd-cluster", "inName": true }
+      ]
+    },
+    {
+      "key": "running-tasks-low",
+      "label": "실행 중 태스크 없음",
+      "namespace": "ECS/ContainerInsights",
+      "metricName": "RunningTaskCount",
+      "statistic": "Average",
+      "period": 60,
+      "evaluationPeriods": 5,
+      "datapointsToAlarm": 5,
+      "comparisonOperator": "LessThanOrEqualToThreshold",
+      "threshold": 0,
+      "thresholdUnit": "count",
+      "treatMissingData": "missing",
+      "severity": "critical",
+      "defaultOn": false,
+      "badges": ["Container Insights 필요"],
+      "note": "클러스터에 Container Insights를 켜야 데이터가 생깁니다. 0이면 서비스가 중단된 상태입니다. 최소 실행 태스크 수에 맞춰 임계값을 올려도 됩니다.",
+      "extraDimensions": [
+        { "name": "ClusterName", "label": "클러스터 이름", "placeholder": "prd-cluster", "inName": true }
+      ]
+    }
+  ]
+}

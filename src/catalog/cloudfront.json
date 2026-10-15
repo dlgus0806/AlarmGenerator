@@ -1,0 +1,77 @@
+{
+  "key": "cloudfront",
+  "label": "CloudFront 배포",
+  "shortLabel": "CloudFront",
+  "shortCode": "cf",
+  "dimensionName": "DistributionId",
+  "idPlaceholder": "E1ABCDEF234567",
+  "idPattern": "^E[A-Z0-9]{5,}$",
+  "idHint": "배포 ID. CloudFront 알람은 us-east-1 리전에만 만들 수 있습니다",
+  "metrics": [
+    {
+      "key": "5xx-rate",
+      "label": "5xx 오류율 높음",
+      "namespace": "AWS/CloudFront",
+      "metricName": "5xxErrorRate",
+      "statistic": "Average",
+      "period": 60,
+      "evaluationPeriods": 5,
+      "datapointsToAlarm": 5,
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 5,
+      "thresholdUnit": "percent",
+      "treatMissingData": "notBreaching",
+      "severity": "critical",
+      "defaultOn": true,
+      "badges": ["기본", "us-east-1"],
+      "note": "전체 요청 중 5xx 비율(%)입니다. 일시적 오류로 울리지 않도록 0보다 큰 값으로 두세요.",
+      "extraDimensions": [
+        { "name": "Region", "label": "Region 디멘션 (고정값)", "placeholder": "Global", "default": "Global" }
+      ]
+    },
+    {
+      "key": "4xx-rate",
+      "hidden": true,
+      "label": "4xx 오류율 높음",
+      "namespace": "AWS/CloudFront",
+      "metricName": "4xxErrorRate",
+      "statistic": "Average",
+      "period": 60,
+      "evaluationPeriods": 5,
+      "datapointsToAlarm": 5,
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 10,
+      "thresholdUnit": "percent",
+      "treatMissingData": "notBreaching",
+      "severity": "warning",
+      "defaultOn": false,
+      "badges": ["us-east-1"],
+      "note": "클라이언트 오류 비율(%)입니다. 봇·잘못된 링크로도 오르므로 평소 수준을 보고 정하세요.",
+      "extraDimensions": [
+        { "name": "Region", "label": "Region 디멘션 (고정값)", "placeholder": "Global", "default": "Global" }
+      ]
+    },
+    {
+      "key": "origin-latency",
+      "hidden": true,
+      "label": "오리진 응답 지연 높음 (p90)",
+      "namespace": "AWS/CloudFront",
+      "metricName": "OriginLatency",
+      "extendedStatistic": "p90",
+      "period": 60,
+      "evaluationPeriods": 5,
+      "datapointsToAlarm": 5,
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 24000,
+      "thresholdUnit": "milliseconds",
+      "treatMissingData": "notBreaching",
+      "severity": "warning",
+      "defaultOn": false,
+      "badges": ["추가 지표(유료)", "us-east-1"],
+      "note": "배포의 '추가 지표'를 켜야 데이터가 생깁니다(추가 요금). 오리진 응답 제한 시간의 80% 정도가 기준입니다. 기본 24000ms는 제한 시간 30초 기준입니다.",
+      "extraDimensions": [
+        { "name": "Region", "label": "Region 디멘션 (고정값)", "placeholder": "Global", "default": "Global" }
+      ]
+    }
+  ]
+}

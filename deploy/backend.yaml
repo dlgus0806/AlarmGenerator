@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudWatch Alarm Generator - 조회 백엔드 (Lambda + Function URL).
+  server/*.mjs (AWS SDK v3) 를 실행한다. 조회 + 승인된 역할 assume 만 수행.
+
+Parameters:
+  FunctionName:
+    Type: String
+    Default: cw-alarm-discover
+  CodeS3Bucket:
+    Type: String
+    Description: Lambda 코드 zip 을 올려둔 S3 버킷
+  CodeS3Key:
+    Type: String
+    Description: 코드 zip 의 S3 키 (예 backend/backend-xxxx.zip)
+  ApiToken:
+    Type: String
+    NoEcho: true
+    Description: 조회 접근 토큰. 프론트 UI 에 입력해야 응답. 비우면 인증 없음(비권장).
+    Default: ''
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+    Description: CORS 허용 오리진. 공개 배포 시 CloudFront 도메인으로 좁힐 것.
+  AllowedRoleNames:
+    Type: String
+    Default: monitoring-readonly
+    Description: assume 허용 역할 이름(콤마 구분). 붙여넣은 ARN 의 역할 이름이 이 중 하나여야 함.
+  AssumeRoleName:
+    Type: String
+    Default: monitoring-readonly
+    Description: 실행 역할이 assume 할 수 있게 허용할 역할 이름(권한 정책 Resource 에 사용).
+  BedrockModelId:
+    Type: String
+    Default: global.anthropic.claude-sonnet-5
+    Description: AI 조언에 쓸 Bedrock 모델/추론 프로파일 ID.
+  DistributionArn:
+    Type: String
+    Default: ''
+    Description: '이 Function URL을 호출할 CloudFront 배포 ARN. 지정 시 그 배포만 허용(권장). 비우면 계정 내 CloudFront 전체 허용.'
+  SlackClientId:
+    Type: String
+    Default: ''
+    Description: 'Slack App client_id (웹 OAuth). 비우면 OAuth 비활성(기존 토큰 방식 폴백).'
+  SlackClientSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: 'Slack App client_secret.'
+  SessionSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: '세션 쿠키 암호화 키(임의 32바이트+ 문자열). 설정 시 OAuth 세션 게이트 활성.'
+  AppBaseUrl:
+    Type: String
+    Default: 'https://cw.dlgus.fitcloud.co.kr'
+    Description: '앱 기본 URL. OAuth redirect_uri = <AppBaseUrl>/api/auth/slack/callback 로 조합.'
+  SlackTeamId:
+    Type: String
+    Default: 'T192GUYE7'
+    Description: '허용 Slack 워크스페이스 팀 ID.'
+  AllowedEmailDomain:
+    Type: String
+    Default: 'saltware.co.kr'
+    Description: '허용 이메일 도메인(@ 제외).'
+  BrokerApiUrl:
+    Type: String
+    Default: ''
+    Description: '자격증명 브로커 API 베이스 URL (Phase 2, POST /v1/customer-credentials).'
+  FeedbackTopicArn:
+    Type: String
+    Default: ''
+    Description: '버그/오류 신고를 발행할 SNS 토픽 ARN(이메일 구독). 비면 신고 비활성.'
+
+Conditions:
+  HasFeedbackTopic: !Not [!Equals [!Ref FeedbackTopicArn, '']]
+  HasDistArn: !Not [!Equals [!Ref DistributionArn, '']]
+
+Resources:
+  ExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: assume-readonly-role
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub 'arn:aws:iam::*:role/${AssumeRoleName}'
+        - PolicyName: invoke-bedrock
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - 'arn:aws:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+        - !If
+          - HasFeedbackTopic
+          - PolicyName: publish-feedback
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: sns:Publish
+                  Resource: !Ref FeedbackTopicArn
+          - !Ref 'AWS::NoValue'
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: nodejs20.x
+      Handler: lambda.handler
+      Role: !GetAtt ExecRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+      Environment:
+        Variables:
+          DISCOVER_API_TOKEN: !Ref ApiToken
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          ALLOWED_ROLE_NAMES: !Ref AllowedRoleNames
+          ASSUME_ROLE_NAME: !Ref AssumeRoleName
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          SLACK_CLIENT_ID: !Ref SlackClientId
+          SLACK_CLIENT_SECRET: !Ref SlackClientSecret
+          SESSION_SECRET: !Ref SessionSecret
+          APP_BASE_URL: !Ref AppBaseUrl
+          SLACK_TEAM_ID: !Ref SlackTeamId
+          ALLOWED_EMAIL_DOMAIN: !Ref AllowedEmailDomain
+          BROKER_API_URL: !Ref BrokerApiUrl
+          FEEDBACK_TOPIC_ARN: !Ref FeedbackTopicArn
+
+  # AuthType AWS_IAM: 공개(NONE) Function URL을 막는 조직 가드레일과 호환.
+  # 앞단 CloudFront가 OAC로 SigV4 서명해 호출한다. 브라우저는 CloudFront 도메인만 부른다.
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref Function
+      AuthType: AWS_IAM
+
+  # CloudFront(OAC)만 이 Function URL을 호출할 수 있게 허용.
+  # 배포 ARN이 있으면 SourceArn으로 그 배포만, 없으면 SourceAccount로 계정 전체 CloudFront 허용.
+  CloudFrontInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Function
+      Action: lambda:InvokeFunctionUrl
+      Principal: cloudfront.amazonaws.com
+      FunctionUrlAuthType: AWS_IAM
+      SourceArn: !If [HasDistArn, !Ref DistributionArn, !Ref 'AWS::NoValue']
+      SourceAccount: !If [HasDistArn, !Ref 'AWS::NoValue', !Ref 'AWS::AccountId']
+
+  # AWS 문서 기준: OAC 는 InvokeFunctionUrl 외에 InvokeFunction 권한도 함께 요구한다.
+  CloudFrontInvokeFn:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Function
+      Action: lambda:InvokeFunction
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !If [HasDistArn, !Ref DistributionArn, !Ref 'AWS::NoValue']
+      SourceAccount: !If [HasDistArn, !Ref 'AWS::NoValue', !Ref 'AWS::AccountId']
+
+Outputs:
+  FunctionUrl:
+    Description: 원본 Function URL (직접 접근은 AWS_IAM 서명 필요)
+    Value: !GetAtt FunctionUrl.FunctionUrl
+  FunctionUrlDomain:
+    Description: 프론트 스택 FunctionUrlDomain 파라미터에 넣을 호스트명
+    Value: !Select [2, !Split ['/', !GetAtt FunctionUrl.FunctionUrl]]
+  FunctionName:
+    Value: !Ref Function
+  ExecRoleArn:
+    Description: 대상 계정의 공통 역할 신뢰 정책에 넣어야 할 주체 ARN
+    Value: !GetAtt ExecRole.Arn
